@@ -1,0 +1,10 @@
+{
+  "protocol": "quill",
+  "version": "1.0",
+  "type": "FETCH",
+  "timestamp": "2025-06-17T15:45:12Z",
+  "payload": {
+    "mode": "thread",
+    "thread_id": "thread-abc123"
+  }
+}

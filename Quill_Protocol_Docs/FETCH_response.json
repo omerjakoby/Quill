@@ -1,0 +1,14 @@
+{
+  "protocol": "quill",
+  "version": "1.0",
+  "type": "FETCH_RESPONSE",
+  "timestamp": "2025-06-17T16:12:01Z",
+  "payload": {
+    "status": "OK",
+    "mode": "overview",
+    "messages": [],
+    "total": 27,
+    "limit": 20,
+    "offset": 0
+  }
+}

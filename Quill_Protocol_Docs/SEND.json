@@ -1,0 +1,37 @@
+{
+    "protocol": "quill",
+    "version": "1.0",
+    "type": "SEND",            
+    "session_token": "...",
+    "time_stamp": "2025-06-17T15:45:12Z",
+    "payload": {
+        "to": ["bob~quillmail.xyz"],
+        "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
+        "bcc": ["eve~quillmail.xyz"],
+        "subject": "Test email example",
+        "body":{
+            "content":[
+                {
+                    "type": "text/plain",
+                    "value": "This is a text message!"
+                },
+                {
+                    "type": "text/html",
+                    "value": "<p>Hi <strong>Bob</strong>,<br>See below.</p>"
+                }
+            ]
+        },
+        "attachments": [
+            {
+                "filename": "photo.jpg",
+                "mimetype": "image/jpeg",
+                "content_base64": "..."
+            }
+        ],
+        "options": {
+            "expires_in_seconds": 7200,
+            "one_time": true,
+            "thread_id": "thread-495abc7d"
+        }
+    }
+}
