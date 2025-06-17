@@ -4,10 +4,8 @@
   "type": "SEND_RESPONSE",
   "timestamp": "2025-06-17T15:45:12Z",
   "payload": {
-    "status": "OK",
-    "message_id": "quill-msg-8271617f",
-    "thread_id": "thread-495abc7d",
-    "delivered_to": ["bob@quillmail.xyz", "carol@quillmail.xyz"],
-    "queued_for": ["dave@quillmail.xyz"]
+    "status": "ERROR",
+    "code": "INVALID_RECIPIENTS",
+    "message": "Invalid email address: dave@quillmail.xyz"
   }
 }
