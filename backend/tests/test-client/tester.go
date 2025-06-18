@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -67,7 +66,7 @@ func main() {
 	for _, file := range files {
 		fmt.Printf("=== Sending %s ===\n", filepath.Base(file))
 
-		raw, err := ioutil.ReadFile(file)
+		raw, err := os.ReadFile(file)
 		if err != nil {
 			log.Fatalf("Error reading %s: %v", file, err)
 		}
