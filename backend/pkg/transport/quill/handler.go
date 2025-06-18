@@ -3,6 +3,7 @@ package quill
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -12,6 +13,10 @@ import (
 // --- Domain Models (Placeholders) ---
 // These would live in your 'internal/domain' package. They represent your
 // business objects, separate from the transport DTOs.
+type userContextKey struct{}
+
+var userKey = userContextKey{}
+
 type DomainSendRequest struct {
 	// Fields that your service layer needs.
 	// Often similar to the DTO but can have different types or structure.
@@ -76,25 +81,39 @@ func (h *MessageHandler) Handle(conn net.Conn) {
 }
 
 // dispatch validates the packet and routes it to the correct specific handler.
+// dispatch validates the packet and routes it to the correct specific handler.
 func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	// --- Authentication ---
 	// Create a base context for this request.
-	// this part is where the auth should happen
+	ctx := context.Background() // Start with an empty base context for this request.
 
-	// ctx := context.Background()
-	// ctx, err := h.authSvc.Authenticate(ctx, packet.SessionToken)
-	// if err != nil {
-	// 	log.Printf("WARN: authentication failed for client: %v", err)
-	// 	h.writeErrorResponse(conn, "AUTH_FAILED", "Invalid or expired session token.")
-	// 	return
-	// }
+	// Authenticate the session token. The Authenticate method will return
+	// a *new* context with the user ID embedded if successful, or an error.
+	var err error // Declare err here for reassignment
+	ctx, err = h.authSvc.Authenticate(ctx, packet.SessionToken)
+	if err != nil {
+		log.Printf("WARN: authentication failed for client %s: %v", conn.RemoteAddr(), err)
+		h.writeErrorResponse(conn, "AUTH_FAILED", "Invalid or expired session token.")
+		return // Stop processing this packet if authentication fails
+	}
 
-	log.Printf("INFO: received packet type '%s' from %s", packet.Type, conn.RemoteAddr())
+	// Now, 'ctx' contains the authenticated user's ID.
+	// You can even log it to verify:
+	if userID, ok := UserIDFromContext(ctx); ok {
+		log.Printf("INFO: client %s authenticated as user '%s'. Received packet type '%s'",
+			conn.RemoteAddr(), userID, packet.Type)
+	} else {
+		// This case should ideally not happen if Authenticate was successful,
+		// but it's good practice for safety.
+		log.Printf("WARN: Authenticated context missing userID for client %s", conn.RemoteAddr())
+	}
 
 	switch packet.Type {
 	case "SEND":
+		// Pass the *authenticated* context down to the handler
 		h.handleSend(ctx, conn, packet.Payload)
 	case "FETCH":
+		// Pass the *authenticated* context down to the handler
 		h.handleFetch(ctx, conn, packet.Payload)
 	default:
 		log.Printf("WARN: unknown packet type: '%s'", packet.Type)
@@ -196,4 +215,34 @@ func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string)
 		Message: message,
 	}
 	h.writeResponse(conn, "ERROR_RESPONSE", errorPayload)
+}
+
+type SimpleAuthService struct {
+	// map of valid sessionToken → userID
+	tokens map[string]string
+}
+
+// constructor for your authService
+func NewSimpleAuthService(tokens map[string]string) authService {
+	return &SimpleAuthService{tokens: tokens}
+}
+
+// Authenticate checks the token against the in-memory map,
+// and if valid, returns a new context carrying the userID.
+func (s *SimpleAuthService) Authenticate(
+	ctx context.Context,
+	token string,
+) (context.Context, error) {
+	userID, ok := s.tokens[token]
+	if !ok {
+		return ctx, fmt.Errorf("invalid or expired token")
+	}
+	// attach the userID to the context for downstream handlers
+	return context.WithValue(ctx, userKey, userID), nil
+}
+
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	v := ctx.Value(userKey)
+	id, ok := v.(string)
+	return id, ok
 }
