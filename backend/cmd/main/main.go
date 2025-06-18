@@ -13,7 +13,6 @@ import (
 func main() {
 	log.Println("Starting Quill server...")
 
-	
 	serviceAccountKeyPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH")
 	if serviceAccountKeyPath == "" {
 		log.Fatalf("Fatal error: FIREBASE_SERVICE_ACCOUNT_KEY_PATH environment variable not set.")

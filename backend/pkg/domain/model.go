@@ -1,5 +1,9 @@
 package domain
 
+import (
+	"time"
+)
+
 // ----- SEND Request and Result -----
 type DomainSendRequest struct {
 	To          []string
@@ -49,3 +53,40 @@ type DomainSendResult struct {
 }
 
 // ----- FETCH Request and Result -----
+
+type FetchMode string
+
+const (
+	FetchModeThread FetchMode = "thread"
+	FetchModeFolder FetchMode = "folder"
+)
+
+type DomainFetchRequest struct {
+	Mode     FetchMode
+	ThreadID *string
+	Folder   *string
+	Limit    *int
+	Offset   *int
+}
+
+type DomainFetchResult struct {
+	Total    int
+	Limit    int
+	Offset   int
+	Messages []Message
+}
+
+type Message struct {
+	MessageID   string
+	ThreadID    string
+	From        []string
+	To          []string
+	CC          []string
+	BCC         []string
+	Subject     string
+	Body        Body
+	Attachments []Attachment
+	SentAt      time.Time
+	Read        bool
+	Flags       []string
+}

@@ -80,8 +80,23 @@ type SendResponsePayload struct {
 type FetchResponsePayload struct {
 	Status   string       `json:"status"`
 	Mode     string       `json:"mode"`
-	// Messages []MessageDTO `json:"messages,omitempty"`
+	Messages []MessageDTO `json:"messages,omitempty"`
 	Total    int          `json:"total,omitempty"`
 	Limit    int          `json:"limit,omitempty"`
 	Offset   int          `json:"offset,omitempty"`
+}
+
+type MessageDTO struct {
+	MessageID   string       `json:"id"`
+	ThreadID    string       `json:"thread_id"`
+	From        string       `json:"from"`
+	To          []string     `json:"to"`
+	CC          []string     `json:"cc,omitempty"`
+	BCC         []string     `json:"bcc,omitempty"`
+	Subject     string       `json:"subject"`
+	Body        BodyPayload  `json:"body"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+	SentAt      time.Time    `json:"timestamp"`
+	Read        bool         `json:"read"`
+	Flags       []string     `json:"flags,omitempty"`
 }

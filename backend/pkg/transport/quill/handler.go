@@ -3,32 +3,30 @@ package quill
 import (
 	"context"
 	"encoding/json"
-	"firebase.google.com/go/auth"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"quill/pkg/domain"
 	"strings"
 	"time"
-)
 
+	"firebase.google.com/go/auth"
+)
 
 type userContextKey struct{}
 
 var userKey = userContextKey{}
 
-
 // --- Service Interfaces ---
 type authService interface {
 	Authenticate(ctx context.Context, token string) (context.Context, error)
 }
-
 type messageService interface {
 	// The service layer works with Domain objects, not transport DTOs.
-	//Send(ctx context.Context, req DomainSendRequest) (*DomainSendRequest, error)
-	//Fetch(ctx context.Context, threadID string) ([]MessageDTO, error)
+	Send(ctx context.Context, req domain.DomainSendRequest) (domain.DomainSendResult, error)
+	Fetch(ctx context.Context, req domain.DomainFetchRequest) (domain.DomainFetchResult, error)
 }
-
 type MessageHandler struct {
 	authSvc    authService
 	messageSvc messageService
@@ -99,30 +97,74 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 		return
 	}
 
-	// --- DTO to Domain Model Conversion ---
-	// domainReq := DomainSendRequest{
-	// 	To:      req.To,
-	// 	Subject: req.Subject,
-	// 	Body:    req.Body.Content[0].Value, // Simplified for example
-	// }
+	// 1) DTO → Domain: map and validate content parts
+	contents := make([]domain.Content, 0, len(req.Body.Content))
+	for _, cp := range req.Body.Content {
+		ct := domain.ContentType(cp.Type)
+		switch ct {
+		case domain.ContentTypePlainText, domain.ContentTypeHTML:
+			// valid
+		default:
+			h.writeErrorResponse(conn, "INVALID_CONTENT_TYPE", fmt.Sprintf("Invalid content type %q; must be %q or %q", cp.Type, domain.ContentTypePlainText, domain.ContentTypeHTML))
+			return
+		}
+		contents = append(contents, domain.Content{Type: ct, Value: cp.Value})
+	}
 
-	// --- Call Business Logic ---
-	//result, err := h.messageSvc.Send(ctx, domainReq)
-	// if err != nil {
-	// 	// Here you could check for specific business errors from the service
-	// 	// and return different error codes.
-	// 	log.Printf("ERROR: service call to Send failed: %v", err)
-	// 	h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to send the message.")
-	// 	return
-	// }
+	// 2) Map attachments
+	atts := make([]domain.Attachment, 0, len(req.Attachments))
+	for _, a := range req.Attachments {
+		atts = append(atts, domain.Attachment{
+			Filename:      a.Filename,
+			Mimetype:      a.Mimetype,
+			ContentBase64: a.ContentBase64,
+		})
+	}
 
-	// --- Create and Send Response ---
-	// respPayload := SendResponsePayload{
-	// 	Status:    "OK",
-	// 	MessageID: result.MessageID,
-	// 	ThreadID:  result.ThreadID,
-	// }
-	// h.writeResponse(conn, "SEND_RESPONSE", respPayload)
+	// 3) Optional fields → pointers
+	var expiresPtr *int
+	if req.Options.ExpiresInSeconds > 0 {
+		expiresPtr = &req.Options.ExpiresInSeconds
+	}
+
+	var oneTimePtr *bool
+	if req.Options.OneTime {
+		oneTimePtr = &req.Options.OneTime
+	}
+
+	var threadIDPtr *string
+	if req.Options.ThreadID != "" {
+		threadIDPtr = &req.Options.ThreadID
+	}
+
+	// 4) Build domain request
+	domainReq := domain.DomainSendRequest{
+		To:          req.To,
+		CC:          req.CC,
+		BCC:         req.BCC,
+		Subject:     req.Subject,
+		Body:        domain.Body{Content: contents},
+		Attachments: atts,
+		Options:     domain.SendOptions{ExpiresInSeconds: expiresPtr, OneTime: oneTimePtr, ThreadID: threadIDPtr},
+	}
+
+	// 5) Call service
+	result, err := h.messageSvc.Send(ctx, domainReq)
+	if err != nil {
+		log.Printf("ERROR: service call to Send failed: %v", err)
+		h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to send the message.")
+		return
+	}
+
+	// 6) Construct and send response
+	resp := SendResponsePayload{
+		Status:      "OK",
+		MessageID:   result.MessageID,
+		ThreadID:    result.ThreadID,
+		DeliveredTo: result.DeliveredTo,
+		QueuedFor:   result.QueuedFor,
+	}
+	h.writeResponse(conn, "SEND_RESPONSE", resp)
 }
 
 func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload json.RawMessage) {
@@ -132,25 +174,98 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 		return
 	}
 
-	// --- Call Business Logic ---
-	// messages, err := h.messageSvc.Fetch(ctx, req.ThreadID)
-	// if err != nil {
-	// 	log.Printf("ERROR: service call to Fetch failed: %v", err)
-	// 	h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to fetch messages.")
-	// 	return
-	// }
+	// 1) DTO → Domain: map & validate fetch parameters
+	var mode domain.FetchMode
+	switch req.Mode {
+	case string(domain.FetchModeThread):
+		mode = domain.FetchModeThread
+	case string(domain.FetchModeFolder):
+		mode = domain.FetchModeFolder
+	default:
+		h.writeErrorResponse(conn, "INVALID_MODE", fmt.Sprintf(
+			"Invalid fetch mode %q; must be %q or %q", req.Mode,
+			string(domain.FetchModeThread), string(domain.FetchModeFolder),
+		))
+		return
+	}
 
-	// --- Create and Send Response ---
-	// respPayload := FetchResponsePayload{
-	// 	Status:   "OK",
-	// 	Mode:     req.Mode,
-	// 	Messages: messages,
-	// 	Total:    len(messages),
-	// }
-	// h.writeResponse(conn, "FETCH_RESPONSE", respPayload)
+	var threadIDPtr *string
+	if req.ThreadID != "" {
+		threadIDPtr = &req.ThreadID
+	}
+	var folderPtr *string
+	if req.Folder != "" {
+		folderPtr = &req.Folder
+	}
+	var limitPtr *int
+	if req.Limit > 0 {
+		limitPtr = &req.Limit
+	}
+	var offsetPtr *int
+	if req.Offset > 0 {
+		offsetPtr = &req.Offset
+	}
+
+	// 2) Build domain request
+	domainReq := domain.DomainFetchRequest{
+		Mode:     mode,
+		ThreadID: threadIDPtr,
+		Folder:   folderPtr,
+		Limit:    limitPtr,
+		Offset:   offsetPtr,
+	}
+
+	// 3) Call business layer
+	result, err := h.messageSvc.Fetch(ctx, domainReq)
+	if err != nil {
+		log.Printf("ERROR: service call to Fetch failed: %v", err)
+		h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to fetch messages.")
+		return
+	}
+
+	// 4) Map domain messages to DTOs
+	dtos := make([]MessageDTO, len(result.Messages))
+	for i, m := range result.Messages {
+		// map body parts
+		bp := BodyPayload{Content: make([]ContentPart, len(m.Body.Content))}
+		for j, c := range m.Body.Content {
+			bp.Content[j] = ContentPart{Type: string(c.Type), Value: c.Value}
+		}
+
+		// map attachments
+		atts := make([]Attachment, len(m.Attachments))
+		for k, a := range m.Attachments {
+			atts[k] = Attachment{Filename: a.Filename, Mimetype: a.Mimetype, ContentBase64: a.ContentBase64}
+		}
+
+		dtos[i] = MessageDTO{
+			MessageID:   m.MessageID,
+			ThreadID:    m.ThreadID,
+			From:        strings.Join(m.From, ","),
+			To:          m.To,
+			CC:          m.CC,
+			BCC:         m.BCC,
+			Subject:     m.Subject,
+			Body:        bp,
+			Attachments: atts,
+			SentAt:      m.SentAt,
+			Read:        m.Read,
+			Flags:       m.Flags,
+		}
+	}
+
+	// 5) Construct and send response
+	resp := FetchResponsePayload{
+		Status:   "OK",
+		Mode:     req.Mode,
+		Messages: dtos,
+		Total:    result.Total,
+		Limit:    result.Limit,
+		Offset:   result.Offset,
+	}
+	h.writeResponse(conn, "FETCH_RESPONSE", resp)
 }
 
-// --- Helper Functions ---
 func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload interface{}) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -180,7 +295,7 @@ func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string)
 	h.writeResponse(conn, "ERROR_RESPONSE", errorPayload)
 }
 
-// --- NEW Firebase Authentication Service ---
+// --- Firebase Authentication Service ---
 
 // FirebaseAuthService implements the authService interface using Firebase Admin SDK.
 type FirebaseAuthService struct {
