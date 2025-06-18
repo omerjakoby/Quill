@@ -3,30 +3,20 @@ package quill
 import (
 	"context"
 	"encoding/json"
-	"firebase.google.com/go/auth" // This is the crucial import for Firebase Auth
+	"firebase.google.com/go/auth"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"strings" // Added for parsing Authorization header
+	"strings"
 	"time"
 )
 
-// --- Domain Models (Placeholders) ---
+
 type userContextKey struct{}
 
 var userKey = userContextKey{}
 
-type DomainSendRequest struct {
-	To      []string
-	Subject string
-	Body    string
-}
-
-type DomainSendResult struct {
-	MessageID string
-	ThreadID  string
-}
 
 // --- Service Interfaces ---
 type authService interface {
@@ -35,11 +25,10 @@ type authService interface {
 
 type messageService interface {
 	// The service layer works with Domain objects, not transport DTOs.
-	//Send(ctx context.Context, req DomainSendRequest) (*DomainSendResult, error)
-	//Fetch(ctx context.Context, threadID string) ([]MessageDTO, error) // For simplicity, let's say fetch returns DTOs directly
+	//Send(ctx context.Context, req DomainSendRequest) (*DomainSendRequest, error)
+	//Fetch(ctx context.Context, threadID string) ([]MessageDTO, error)
 }
 
-// MessageHandler (no changes needed here, as it depends on the interface)
 type MessageHandler struct {
 	authSvc    authService
 	messageSvc messageService

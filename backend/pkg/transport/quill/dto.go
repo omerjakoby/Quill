@@ -80,7 +80,7 @@ type SendResponsePayload struct {
 type FetchResponsePayload struct {
 	Status   string       `json:"status"`
 	Mode     string       `json:"mode"`
-	Messages []MessageDTO `json:"messages,omitempty"`
+	// Messages []MessageDTO `json:"messages,omitempty"`
 	Total    int          `json:"total,omitempty"`
 	Limit    int          `json:"limit,omitempty"`
 	Offset   int          `json:"offset,omitempty"`
