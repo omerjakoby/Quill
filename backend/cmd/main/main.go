@@ -9,9 +9,6 @@ import (
 	"log"
 	"os"
 	"quill/pkg/transport/quill"
-
-	firebase "firebase.google.com/go"
-	"google.golang.org/api/option"
 )
 
 func main() {
