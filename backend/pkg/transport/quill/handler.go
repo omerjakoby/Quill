@@ -3,18 +3,19 @@ package quill
 import (
 	"context"
 	"encoding/json"
+	firebase "firebase.google.com/go" // Keep this import
+	"firebase.google.com/go/auth"     // This is the crucial import for Firebase Auth
 	"fmt"
+	"google.golang.org/api/option"
 	"io"
 	"log"
 	"net"
+	"strings" // Added for parsing Authorization header
 	"time"
 )
 
 // --- Service Interfaces ---
-// These define the contract between the transport layer and the business logic layer.
-
 type authService interface {
-	// Authenticates a token and returns a user context (e.g., userID).
 	Authenticate(ctx context.Context, token string) (context.Context, error)
 }
 
@@ -24,13 +25,12 @@ type messageService interface {
 	//Fetch(ctx context.Context, threadID string) ([]MessageDTO, error) // For simplicity, let's say fetch returns DTOs directly
 }
 
-// MessageHandler handles the protocol logic for a single TCP connection.
+// MessageHandler (no changes needed here, as it depends on the interface)
 type MessageHandler struct {
 	authSvc    authService
 	messageSvc messageService
 }
 
-// NewMessageHandler creates a new handler with its required dependencies.
 func NewMessageHandler(as authService, ms messageService) *MessageHandler {
 	return &MessageHandler{
 		authSvc:    as,
@@ -38,7 +38,6 @@ func NewMessageHandler(as authService, ms messageService) *MessageHandler {
 	}
 }
 
-// Handle is the entry point for a new connection. It reads and dispatches packets.
 func (h *MessageHandler) Handle(conn net.Conn) {
 	defer conn.Close()
 	log.Printf("INFO: new client connected: %s", conn.RemoteAddr())
@@ -55,44 +54,34 @@ func (h *MessageHandler) Handle(conn net.Conn) {
 			return
 		}
 
-		// Dispatch the packet to the correct handler.
 		h.dispatch(conn, &packet)
 	}
 }
 
 // dispatch validates the packet and routes it to the correct specific handler.
 func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
-	// --- Authentication ---
-	// Create a base context for this request.
-	ctx := context.Background() // Start with an empty base context for this request.
+	ctx := context.Background()
 
-	// Authenticate the session token. The Authenticate method will return
-	// a *new* context with the user ID embedded if successful, or an error.
-	var err error // Declare err here for reassignment
+	// The `packet.SessionToken` is now expected to be the Firebase ID Token.
+	var err error
 	ctx, err = h.authSvc.Authenticate(ctx, packet.SessionToken)
 	if err != nil {
 		log.Printf("WARN: authentication failed for client %s: %v", conn.RemoteAddr(), err)
 		h.writeErrorResponse(conn, "AUTH_FAILED", "Invalid or expired session token.")
-		return // Stop processing this packet if authentication fails
+		return
 	}
 
-	// Now, 'ctx' contains the authenticated user's ID.
-	// You can even log it to verify:
 	if userID, ok := UserIDFromContext(ctx); ok {
 		log.Printf("INFO: client %s authenticated as user '%s'. Received packet type '%s'",
 			conn.RemoteAddr(), userID, packet.Type)
 	} else {
-		// This case should ideally not happen if Authenticate was successful,
-		// but it's good practice for safety.
 		log.Printf("WARN: Authenticated context missing userID for client %s", conn.RemoteAddr())
 	}
 
 	switch packet.Type {
 	case "SEND":
-		// Pass the *authenticated* context down to the handler
 		h.handleSend(ctx, conn, packet.Payload)
 	case "FETCH":
-		// Pass the *authenticated* context down to the handler
 		h.handleFetch(ctx, conn, packet.Payload)
 	default:
 		log.Printf("WARN: unknown packet type: '%s'", packet.Type)
@@ -100,7 +89,6 @@ func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	}
 }
 
-// handleSend processes a "SEND" packet.
 func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload json.RawMessage) {
 	var req SendPayload
 	if err := json.Unmarshal(payload, &req); err != nil {
@@ -134,7 +122,6 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 	// h.writeResponse(conn, "SEND_RESPONSE", respPayload)
 }
 
-// handleFetch processes a "FETCH" packet.
 func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload json.RawMessage) {
 	var req FetchPayload
 	if err := json.Unmarshal(payload, &req); err != nil {
@@ -161,13 +148,10 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 }
 
 // --- Helper Functions ---
-
-// writeResponse is a generic helper to construct and send any successful response packet.
 func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload interface{}) {
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("FATAL: could not marshal response payload: %v", err)
-		// Don't send an error back, because the server itself is broken.
 		return
 	}
 
@@ -184,7 +168,6 @@ func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload
 	}
 }
 
-// writeErrorResponse is a convenience helper for sending standardized error packets.
 func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string) {
 	errorPayload := ErrorResponsePayload{
 		Status:  "ERROR",
@@ -194,30 +177,46 @@ func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string)
 	h.writeResponse(conn, "ERROR_RESPONSE", errorPayload)
 }
 
-type SimpleAuthService struct {
-	// map of valid sessionToken → userID
-	tokens map[string]string
+// --- NEW Firebase Authentication Service ---
+
+// FirebaseAuthService implements the authService interface using Firebase Admin SDK.
+type FirebaseAuthService struct {
+	firebaseAuthClient *auth.Client
+	// Optional: If you need to check token revocation, you'd store the firebase.App here too,
+	// or create a separate VerifyIDTokenAndCheckRevoked method.
 }
 
-// constructor for your authService
-func NewSimpleAuthService(tokens map[string]string) authService {
-	return &SimpleAuthService{tokens: tokens}
-}
-
-// Authenticate checks the token against the in-memory map,
-// and if valid, returns a new context carrying the userID.
-func (s *SimpleAuthService) Authenticate(
-	ctx context.Context,
-	token string,
-) (context.Context, error) {
-	userID, ok := s.tokens[token]
-	if !ok {
-		return ctx, fmt.Errorf("invalid or expired token")
+// NewFirebaseAuthService creates a new FirebaseAuthService instance.
+// It requires an initialized Firebase Auth client.
+func NewFirebaseAuthService(client *auth.Client) authService {
+	return &FirebaseAuthService{
+		firebaseAuthClient: client,
 	}
-	// attach the userID to the context for downstream handlers
-	return context.WithValue(ctx, userKey, userID), nil
 }
 
+// Authenticate verifies the Firebase ID Token.
+// It returns a new context with the user's UID attached if verification is successful.
+func (s *FirebaseAuthService) Authenticate(
+	ctx context.Context,
+	idToken string,
+) (context.Context, error) {
+	// Trim "Bearer " prefix if present, although your current client-side sends raw token.
+	// For robustness, it's good practice.
+	idToken = strings.TrimPrefix(idToken, "Bearer ")
+
+	// Use the Firebase Admin SDK to verify the ID token.
+	// This performs all necessary checks: signature, expiration, issuer, audience.
+	token, err := s.firebaseAuthClient.VerifyIDToken(ctx, idToken)
+	if err != nil {
+		return ctx, fmt.Errorf("failed to verify Firebase ID token: %w", err)
+	}
+
+	// Token is valid. Attach the Firebase User ID (UID) to the context.
+	// The UID is a unique identifier for the user within Firebase.
+	return context.WithValue(ctx, userKey, token.UID), nil
+}
+
+// UserIDFromContext remains the same, as it extracts from the generic userKey.
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	v := ctx.Value(userKey)
 	id, ok := v.(string)
