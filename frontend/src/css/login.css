@@ -12,6 +12,18 @@
   padding: 0rem 10rem 0rem 10rem;
   box-shadow: #333 0.2rem 0.2rem 10px 0px;
   border-radius: 3%;
+  z-index: 1000;
+}
+.background-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #75aeeb;
+  background-position: center;
+  z-index: -1;
 }
 
 .auth-page-container h1 {
@@ -33,7 +45,7 @@
   padding: 12px 24px;
   border: 1px solid #ccc;
   border-radius: 8px;
-  background-color: #3182ce;
+  background-color: #3b88cf;
   font-size: 16px;
   font-weight: 500;
   cursor: pointer;
