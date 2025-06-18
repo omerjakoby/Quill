@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	firebase "firebase.google.com/go"
+	"fmt"
+	"github.com/joho/godotenv"
 	"google.golang.org/api/option"
 	"log"
 	"os"
@@ -20,13 +22,17 @@ func main() {
 	// For production, always load it from an environment variable.
 	//
 	// Example using environment variable:
-	serviceAccountKeyPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH")
-	if serviceAccountKeyPath == "" {
-		log.Fatalf("Fatal error: FIREBASE_SERVICE_ACCOUNT_KEY_PATH environment variable not set.")
-		// For local development, you might set a default here or require a flag:
-		// serviceAccountKeyPath = "path/to/your-service-account-key.json"
-		// log.Println("WARNING: Using default service account key path for development. Do not use in production.")
+	err := godotenv.Load("C:\\Users\\assij\\GolandProjects\\Quill\\.env") // Assuming main.go is in backend/cmd/main/
+	if err != nil {
+		log.Fatal("Error loading .env file:", err)
 	}
+
+	serviceAccountKeyPath := os.Getenv("firebase_service_account_path")
+	if serviceAccountKeyPath == "" {
+		log.Fatal("firebase_service_account_path environment variable not set.")
+	}
+
+	fmt.Println("Firebase Service Account Key Path:", serviceAccountKeyPath)
 
 	sa := option.WithCredentialsFile(serviceAccountKeyPath)
 
@@ -47,6 +53,8 @@ func main() {
 	// --- Step 2: Instantiate your FirebaseAuthService ---
 	// This service now wraps the Firebase Auth client.
 	authService := quill.NewFirebaseAuthService(firebaseAuthClient)
+	log.Println("FirebaseAuthService initialized successfully.")
+	log.Println(authService)
 	//auth service goas in to the auth service
 
 }

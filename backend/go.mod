@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	firebase.google.com/go v3.13.0+incompatible
+	github.com/joho/godotenv v1.5.1
 	google.golang.org/api v0.231.0
 )
 
