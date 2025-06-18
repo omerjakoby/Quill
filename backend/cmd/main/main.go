@@ -46,7 +46,7 @@ func main() {
 	// For production, always load it from an environment variable.
 	//
 	// Example using environment variable:
-	err := godotenv.Load("C:\\Users\\assij\\GolandProjects\\Quill\\.env") // Assuming main.go is in backend/cmd/main/
+	err := godotenv.Load("../../../.env") // Assuming main.go is in backend/cmd/main/
 	if err != nil {
 		log.Fatal("Error loading .env file:", err)
 	}

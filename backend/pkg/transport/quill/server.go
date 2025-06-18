@@ -43,5 +43,3 @@ func (s *Server) Start() error {
 		go s.handler.Handle(conn)
 	}
 }
-
-//

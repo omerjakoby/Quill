@@ -63,7 +63,7 @@ func (h *MessageHandler) Handle(conn net.Conn) {
 func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	ctx := context.Background()
 
-	// The `packet.SessionToken` is now expected to be the Firebase ID Token.
+	// The `packet.SessionToken` is the Firebase ID Token.
 	var err error
 	ctx, err = h.authSvc.Authenticate(ctx, packet.SessionToken)
 	if err != nil {
@@ -296,45 +296,30 @@ func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string)
 }
 
 // --- Firebase Authentication Service ---
-
-// FirebaseAuthService implements the authService interface using Firebase Admin SDK.
 type FirebaseAuthService struct {
 	firebaseAuthClient *auth.Client
-	// Optional: If you need to check token revocation, you'd store the firebase.App here too,
-	// or create a separate VerifyIDTokenAndCheckRevoked method.
 }
 
-// NewFirebaseAuthService creates a new FirebaseAuthService instance.
-// It requires an initialized Firebase Auth client.
 func NewFirebaseAuthService(client *auth.Client) authService {
 	return &FirebaseAuthService{
 		firebaseAuthClient: client,
 	}
 }
 
-// Authenticate verifies the Firebase ID Token.
-// It returns a new context with the user's UID attached if verification is successful.
 func (s *FirebaseAuthService) Authenticate(
 	ctx context.Context,
 	idToken string,
 ) (context.Context, error) {
-	// Trim "Bearer " prefix if present, although your current client-side sends raw token.
-	// For robustness, it's good practice.
 	idToken = strings.TrimPrefix(idToken, "Bearer ")
-
-	// Use the Firebase Admin SDK to verify the ID token.
-	// This performs all necessary checks: signature, expiration, issuer, audience.
 	token, err := s.firebaseAuthClient.VerifyIDToken(ctx, idToken)
 	if err != nil {
 		return ctx, fmt.Errorf("failed to verify Firebase ID token: %w", err)
 	}
 
 	// Token is valid. Attach the Firebase User ID (UID) to the context.
-	// The UID is a unique identifier for the user within Firebase.
 	return context.WithValue(ctx, userKey, token.UID), nil
 }
 
-// UserIDFromContext remains the same, as it extracts from the generic userKey.
 func UserIDFromContext(ctx context.Context) (string, bool) {
 	v := ctx.Value(userKey)
 	id, ok := v.(string)
