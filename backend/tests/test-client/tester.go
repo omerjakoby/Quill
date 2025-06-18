@@ -28,7 +28,7 @@ type Packet struct {
 
 func main() {
 	// Hardcoded JSON directory relative to this file's location
-	jsonDir := "../Quill_Protocol_JSON_tests"
+	jsonDir := "../Quill_Protocol_JSON/Requests"
 
 	// Optional: load .env file
 	_ = godotenv.Load("../../../.env")
