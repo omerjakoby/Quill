@@ -3,16 +3,30 @@ package quill
 import (
 	"context"
 	"encoding/json"
-	firebase "firebase.google.com/go" // Keep this import
-	"firebase.google.com/go/auth"     // This is the crucial import for Firebase Auth
+	"firebase.google.com/go/auth" // This is the crucial import for Firebase Auth
 	"fmt"
-	"google.golang.org/api/option"
 	"io"
 	"log"
 	"net"
 	"strings" // Added for parsing Authorization header
 	"time"
 )
+
+// --- Domain Models (Placeholders) ---
+type userContextKey struct{}
+
+var userKey = userContextKey{}
+
+type DomainSendRequest struct {
+	To      []string
+	Subject string
+	Body    string
+}
+
+type DomainSendResult struct {
+	MessageID string
+	ThreadID  string
+}
 
 // --- Service Interfaces ---
 type authService interface {
