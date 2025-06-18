@@ -31,7 +31,6 @@ func main() {
 	}
 
 	serviceAccountKeyPath := os.Getenv("firebase_service_account_path")
-	serviceAccountKeyPath := os.Getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH")
 	if serviceAccountKeyPath == "" {
 		log.Fatal("firebase_service_account_path environment variable not set.")
 		log.Fatalf("Fatal error: FIREBASE_SERVICE_ACCOUNT_KEY_PATH environment variable not set.")
