@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -29,16 +32,38 @@ type FetchPayload struct {
 }
 
 func main() {
+	runTest("")
+}
+
+func runTest(savedToken string) {
 	// Load environment variables
 	err := godotenv.Load("C:\\Users\\assij\\GolandProjects\\Quill\\.env")
 	if err != nil {
 		log.Fatal("Error loading .env file:", err)
 	}
 
-	// Get Firebase token for authentication
+	var token string
 
-	token := "eyJhbGciOiJSUzI1NiIsImtpZCI6IjNiZjA1MzkxMzk2OTEzYTc4ZWM4MGY0MjcwMzM4NjM2NDA2MTBhZGMiLCJ0eXAiOiJKV1QifQ.eyJuYW1lIjoib21lciAxIiwicGljdHVyZSI6Imh0dHBzOi8vbGgzLmdvb2dsZXVzZXJjb250ZW50LmNvbS9hL0FDZzhvY0lKX3VWNGRpVUVJcFFsMHVwYkIyLXVNeU1FaTQxTElDSnJEcnZfYTFnUGJIeWRDS3c9czk2LWMiLCJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vcXVpbGwtbXRwIiwiYXVkIjoicXVpbGwtbXRwIiwiYXV0aF90aW1lIjoxNzUwMjcwMzMxLCJ1c2VyX2lkIjoiTGJPZ2xTMHI3RVZZR0IzTVc2cmVxc3NqNkRoMiIsInN1YiI6IkxiT2dsUzByN0VWWUdCM01XNnJlcXNzajZEaDIiLCJpYXQiOjE3NTAyNzAzMzIsImV4cCI6MTc1MDI3MzkzMiwiZW1haWwiOiJvbWVyLmpha29ieUBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJnb29nbGUuY29tIjpbIjExMjA2NzcwNTg0MTEyMTYwMzcxMSJdLCJlbWFpbCI6WyJvbWVyLmpha29ieUBnbWFpbC5jb20iXX0sInNpZ25faW5fcHJvdmlkZXIiOiJnb29nbGUuY29tIn19.NATbzV8hljaRnUYi_3ddc5xxX_uUtqxd2lsSaPWtZpS41UAs03uQ9uDN8TNqbLFgiquZuDFaxB-9k0245fYSWg-yybKR0u0AOLqg7x_PCxR3pbvgp3t5EjVKxgszADL8EQRhgQZmc-tIL9ewUERoHiMCJaFWjNFAjV97P1Gkj9hLFDD_DMjSSlQOVUrGH-u55MpXnl0fYaUNgtRsHOze69tH6AXRbXEBRdDn9igwGWS7sOOls8JM_hDgQ2UUXndgM5sv0Cau0KkbSEoyRavq-I-twWrNbNLx-mj_JyhND4kiHDyvANWsmKgrXyK81rTQrEBFhguwlab0cW7PVtbSVQ"
-	fmt.Println("Successfully obtained Firebase token")
+	// Only prompt for token if we don't have a saved one
+	if savedToken == "" {
+		// Prompt user for Firebase token
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("Enter your Firebase authentication token: ")
+		token, err = reader.ReadString('\n')
+		if err != nil {
+			log.Fatalf("Failed to read token: %v", err)
+		}
+		token = strings.TrimSpace(token)
+
+		if token == "" {
+			log.Fatal("Token cannot be empty")
+		}
+
+		fmt.Println("Token received successfully")
+	} else {
+		token = savedToken
+		fmt.Println("Using previously entered token")
+	}
 
 	// Connect to the Quill server
 	conn, err := net.Dial("tcp", "localhost:9876")
@@ -97,4 +122,19 @@ func main() {
 	}
 
 	fmt.Println("\nTest completed successfully!")
+
+	// Ask if user wants to run again
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("\nDo you want to run again? (y/n): ")
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		log.Fatalf("Failed to read input: %v", err)
+	}
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer == "y" || answer == "yes" {
+		runTest(token) // Run again with the same token
+	} else {
+		fmt.Println("Exiting program.")
+	}
 }
