@@ -8,8 +8,32 @@ import (
 	"google.golang.org/api/option"
 	"log"
 	"os"
+	"quill/pkg/domain"
 	"quill/pkg/transport/quill"
 )
+
+// MockMessageService implements the messageService interface with dummy functionality
+type MockMessageService struct{}
+
+func (m *MockMessageService) Send(ctx context.Context, req domain.DomainSendRequest) (domain.DomainSendResult, error) {
+	log.Println("Mock: Sending message to", req.To)
+	return domain.DomainSendResult{
+		MessageID:   "mock-msg-123",
+		ThreadID:    "mock-thread-456",
+		DeliveredTo: req.To,
+		QueuedFor:   []string{},
+	}, nil
+}
+
+func (m *MockMessageService) Fetch(ctx context.Context, req domain.DomainFetchRequest) (domain.DomainFetchResult, error) {
+	log.Println("Mock: Fetching messages with mode", req.Mode)
+	return domain.DomainFetchResult{
+		Total:    0,
+		Limit:    10,
+		Offset:   0,
+		Messages: []domain.Message{},
+	}, nil
+}
 
 func main() {
 	log.Println("Starting Quill server...")
@@ -43,7 +67,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Fatal error: cannot initialize Firebase app: %v", err)
 	}
-
 	firebaseAuthClient, err := app.Auth(ctx)
 	if err != nil {
 		log.Fatalf("Fatal error: cannot get Firebase Auth client: %v", err)
@@ -54,6 +77,10 @@ func main() {
 	// --- Instantiate your FirebaseAuthService ---
 	// This service now wraps the Firebase Auth client.
 	authSvc := quill.NewFirebaseAuthService(firebaseAuthClient)
+
+	// Create the mock message service
+	msgSvc := &MockMessageService{}
+	log.Println("Created mock message service for testing")
 
 	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)
 

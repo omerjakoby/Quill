@@ -1,10 +1,211 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>$Title$</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firebase Google Auth & ID Token Tester</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 90%;
+            width: 700px;
+        }
+        h1 {
+            color: #424242;
+        }
+        button {
+            background-color: #4285F4;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #357ae8;
+        }
+        #signOutButton {
+            background-color: #db4437;
+        }
+        #signOutButton:hover {
+            background-color: #c5372c;
+        }
+        .hidden {
+            display: none;
+        }
+        .user-info {
+            margin-top: 1.5rem;
+            text-align: left;
+        }
+        .token-display {
+            margin-top: 1rem;
+            background-color: #eee;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 1rem;
+            word-wrap: break-word;
+            white-space: pre-wrap; /* Allows the long token to wrap */
+            text-align: left;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: "Courier New", Courier, monospace;
+        }
+        p {
+            line-height: 1.6;
+        }
+    </style>
 </head>
 <body>
-$END$
+
+<div class="container">
+    <h1>Firebase Auth Tester</h1>
+    <p>Login with Google to get your Firebase ID Token.</p>
+
+    <!-- Login Button -->
+    <button id="signInButton">Sign in with Google</button>
+
+    <!-- User Info and Logout Button (hidden by default) -->
+    <div id="userInfo" class="hidden">
+        <div class="user-info">
+            <p><strong>Logged in as:</strong> <span id="userName"></span></p>
+            <p><strong>Email:</strong> <span id="userEmail"></span></p>
+        </div>
+
+        <h3>Firebase ID Token:</h3>
+        <div id="idToken" class="token-display">Fetching token...</div>
+
+        <br>
+        <button id="signOutButton">Sign Out</button>
+    </div>
+</div>
+
+<!-- Use type="module" for modern Firebase SDK -->
+<script type="module">
+    // Import functions from the Firebase SDKs
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js";
+    import {
+        getAuth,
+        onAuthStateChanged,
+        GoogleAuthProvider,
+        signInWithPopup,
+        signOut
+    } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
+
+    // --- START: PASTE YOUR FIREBASE CONFIG HERE ---
+    const firebaseConfig = {
+
+        apiKey: "AIzaSyAwLni-frP5p1dpUuOMPQr8gR0IIVUUxR8",
+
+        authDomain: "quill-mtp.firebaseapp.com",
+
+        projectId: "quill-mtp",
+
+        storageBucket: "quill-mtp.firebasestorage.app",
+
+        messagingSenderId: "771595937562",
+
+        appId: "1:771595937562:web:7ba9bf6e72a0660a6feea3",
+
+        measurementId: "G-ZZ5KLPP37F"
+
+    };
+
+    // --- END: PASTE YOUR FIREBASE CONFIG HERE ---
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+
+    // Get references to DOM elements
+    const signInButton = document.getElementById('signInButton');
+    const signOutButton = document.getElementById('signOutButton');
+    const userInfoDiv = document.getElementById('userInfo');
+    const userNameSpan = document.getElementById('userName');
+    const userEmailSpan = document.getElementById('userEmail');
+    const idTokenDiv = document.getElementById('idToken');
+
+    // Sign-in logic
+    signInButton.onclick = () => {
+        signInWithPopup(auth, provider)
+            .then((result) => {
+                // This gives you a Google Access Token. You can use it to access the Google API.
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                const token = credential.accessToken;
+                // The signed-in user info.
+                const user = result.user;
+                console.log("Sign-in successful for user:", user);
+            }).catch((error) => {
+            // Handle Errors here.
+            const errorCode = error.code;
+            const errorMessage = error.message;
+            console.error(`Sign-in error (${errorCode}): ${errorMessage}`);
+        });
+    };
+
+    // Sign-out logic
+    signOutButton.onclick = () => {
+        signOut(auth).catch(error => console.error("Sign-out error", error));
+    };
+
+    // Auth state listener - THIS IS THE CORE OF THE APP
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            // User is signed in.
+            console.log("Auth state changed: User is signed in.", user);
+
+            // Show user info and hide login button
+            userInfoDiv.classList.remove('hidden');
+            signInButton.classList.add('hidden');
+
+            // Populate user details
+            userNameSpan.textContent = user.displayName;
+            userEmailSpan.textContent = user.email;
+
+            // Get the ID token
+            idTokenDiv.textContent = 'Fetching token...';
+            user.getIdToken(/* forceRefresh */ true)
+                .then((idToken) => {
+                    console.log("Successfully got ID Token.");
+                    // Display the token
+                    idTokenDiv.textContent = idToken;
+                })
+                .catch((error) => {
+                    console.error("Error getting ID Token:", error);
+                    idTokenDiv.textContent = `Error getting token: ${error.message}`;
+                });
+        } else {
+            // User is signed out.
+            console.log("Auth state changed: User is signed out.");
+
+            // Hide user info and show login button
+            userInfoDiv.classList.add('hidden');
+            signInButton.classList.remove('hidden');
+
+            // Clear user details
+            userNameSpan.textContent = '';
+            userEmailSpan.textContent = '';
+            idTokenDiv.textContent = '';
+        }
+    });
+
+</script>
+
 </body>
 </html>
