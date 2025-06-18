@@ -10,26 +10,6 @@ import (
 	"time"
 )
 
-// --- Domain Models (Placeholders) ---
-// These would live in your 'internal/domain' package. They represent your
-// business objects, separate from the transport DTOs.
-type userContextKey struct{}
-
-var userKey = userContextKey{}
-
-type DomainSendRequest struct {
-	// Fields that your service layer needs.
-	// Often similar to the DTO but can have different types or structure.
-	To      []string
-	Subject string
-	Body    string // Example: service layer might just want the plain text body
-}
-
-type DomainSendResult struct {
-	MessageID string
-	ThreadID  string
-}
-
 // --- Service Interfaces ---
 // These define the contract between the transport layer and the business logic layer.
 
@@ -40,8 +20,8 @@ type authService interface {
 
 type messageService interface {
 	// The service layer works with Domain objects, not transport DTOs.
-	Send(ctx context.Context, req DomainSendRequest) (*DomainSendResult, error)
-	Fetch(ctx context.Context, threadID string) ([]MessageDTO, error) // For simplicity, let's say fetch returns DTOs directly
+	//Send(ctx context.Context, req DomainSendRequest) (*DomainSendResult, error)
+	//Fetch(ctx context.Context, threadID string) ([]MessageDTO, error) // For simplicity, let's say fetch returns DTOs directly
 }
 
 // MessageHandler handles the protocol logic for a single TCP connection.
@@ -80,7 +60,6 @@ func (h *MessageHandler) Handle(conn net.Conn) {
 	}
 }
 
-// dispatch validates the packet and routes it to the correct specific handler.
 // dispatch validates the packet and routes it to the correct specific handler.
 func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	// --- Authentication ---
@@ -130,31 +109,29 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 	}
 
 	// --- DTO to Domain Model Conversion ---
-	// This is a crucial step in Clean Architecture. The service layer
-	// should not know about JSON DTOs.
-	domainReq := DomainSendRequest{
-		To:      req.To,
-		Subject: req.Subject,
-		Body:    req.Body.Content[0].Value, // Simplified for example
-	}
+	// domainReq := DomainSendRequest{
+	// 	To:      req.To,
+	// 	Subject: req.Subject,
+	// 	Body:    req.Body.Content[0].Value, // Simplified for example
+	// }
 
 	// --- Call Business Logic ---
-	result, err := h.messageSvc.Send(ctx, domainReq)
-	if err != nil {
-		// Here you could check for specific business errors from the service
-		// and return different error codes.
-		log.Printf("ERROR: service call to Send failed: %v", err)
-		h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to send the message.")
-		return
-	}
+	//result, err := h.messageSvc.Send(ctx, domainReq)
+	// if err != nil {
+	// 	// Here you could check for specific business errors from the service
+	// 	// and return different error codes.
+	// 	log.Printf("ERROR: service call to Send failed: %v", err)
+	// 	h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to send the message.")
+	// 	return
+	// }
 
 	// --- Create and Send Response ---
-	respPayload := SendResponsePayload{
-		Status:    "OK",
-		MessageID: result.MessageID,
-		ThreadID:  result.ThreadID,
-	}
-	h.writeResponse(conn, "SEND_RESPONSE", respPayload)
+	// respPayload := SendResponsePayload{
+	// 	Status:    "OK",
+	// 	MessageID: result.MessageID,
+	// 	ThreadID:  result.ThreadID,
+	// }
+	// h.writeResponse(conn, "SEND_RESPONSE", respPayload)
 }
 
 // handleFetch processes a "FETCH" packet.
@@ -166,21 +143,21 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 	}
 
 	// --- Call Business Logic ---
-	messages, err := h.messageSvc.Fetch(ctx, req.ThreadID)
-	if err != nil {
-		log.Printf("ERROR: service call to Fetch failed: %v", err)
-		h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to fetch messages.")
-		return
-	}
+	// messages, err := h.messageSvc.Fetch(ctx, req.ThreadID)
+	// if err != nil {
+	// 	log.Printf("ERROR: service call to Fetch failed: %v", err)
+	// 	h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to fetch messages.")
+	// 	return
+	// }
 
 	// --- Create and Send Response ---
-	respPayload := FetchResponsePayload{
-		Status:   "OK",
-		Mode:     req.Mode,
-		Messages: messages,
-		Total:    len(messages),
-	}
-	h.writeResponse(conn, "FETCH_RESPONSE", respPayload)
+	// respPayload := FetchResponsePayload{
+	// 	Status:   "OK",
+	// 	Mode:     req.Mode,
+	// 	Messages: messages,
+	// 	Total:    len(messages),
+	// }
+	// h.writeResponse(conn, "FETCH_RESPONSE", respPayload)
 }
 
 // --- Helper Functions ---
