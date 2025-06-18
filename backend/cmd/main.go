@@ -1,7 +1,12 @@
 package main
 
-import "backend/pkg/transport/quill"
+import (
+	"fmt"
+	"quill/pkg/transport/quill"
+)
 
 func main() {
+	fmt.Println("Starting Quill")
 	quill.OpenTcpPort()
+
 }
