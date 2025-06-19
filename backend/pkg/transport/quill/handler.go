@@ -10,27 +10,24 @@ import (
 	"quill/pkg/domain"
 	"strings"
 	"time"
-
-	"firebase.google.com/go/auth"
 )
 
-type userContextKey struct{}
 
-var userKey = userContextKey{}
-
-// --- Service Interfaces ---
 type authService interface {
 	Authenticate(ctx context.Context, token string) (context.Context, error)
 }
+
 type messageService interface {
 	// The service layer works with Domain objects, not transport DTOs.
 	Send(ctx context.Context, req domain.DomainSendRequest) (domain.DomainSendResult, error)
 	Fetch(ctx context.Context, req domain.DomainFetchRequest) (domain.DomainFetchResult, error)
 }
+
 type MessageHandler struct {
 	authSvc    authService
 	messageSvc messageService
 }
+
 
 func NewMessageHandler(as authService, ms messageService) *MessageHandler {
 	return &MessageHandler{
@@ -293,35 +290,4 @@ func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string)
 		Message: message,
 	}
 	h.writeResponse(conn, "ERROR_RESPONSE", errorPayload)
-}
-
-// --- Firebase Authentication Service ---
-type FirebaseAuthService struct {
-	firebaseAuthClient *auth.Client
-}
-
-func NewFirebaseAuthService(client *auth.Client) authService {
-	return &FirebaseAuthService{
-		firebaseAuthClient: client,
-	}
-}
-
-func (s *FirebaseAuthService) Authenticate(
-	ctx context.Context,
-	idToken string,
-) (context.Context, error) {
-	idToken = strings.TrimPrefix(idToken, "Bearer ")
-	token, err := s.firebaseAuthClient.VerifyIDToken(ctx, idToken)
-	if err != nil {
-		return ctx, fmt.Errorf("failed to verify Firebase ID token: %w", err)
-	}
-
-	// Token is valid. Attach the Firebase User ID (UID) to the context.
-	return context.WithValue(ctx, userKey, token.UID), nil
-}
-
-func UserIDFromContext(ctx context.Context) (string, bool) {
-	v := ctx.Value(userKey)
-	id, ok := v.(string)
-	return id, ok
 }
