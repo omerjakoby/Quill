@@ -21,7 +21,7 @@ function Bar({user, handleSignOut}) {
         <button className="barherf">Calendar</button>
       </div>
       <div>
-        <img src={logoFull} className="logo" />
+        <img src={logoFull} alt="Full White Logo" className="logo" />
       </div>
     </div>
   );
