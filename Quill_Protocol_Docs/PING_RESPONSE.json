@@ -1,0 +1,11 @@
+{
+  "protocol": "quill",
+  "version": "1.0",
+  "type": "PING_RESPONSE",
+  "timestamp": "2025-06-17T16:25:01Z",
+  "payload": {
+    "status": "OK",
+    "server_time": "2025-06-17T16:25:01Z",
+    "session_valid": true
+  }
+}

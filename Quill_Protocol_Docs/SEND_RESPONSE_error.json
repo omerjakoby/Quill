@@ -1,0 +1,11 @@
+{
+  "protocol": "quill",
+  "version": "1.0",
+  "type": "SEND_RESPONSE",
+  "timestamp": "2025-06-17T15:45:12Z",
+  "payload": {
+    "status": "ERROR",
+    "code": "INVALID_RECIPIENTS",
+    "message": "Invalid email address: dave@quillmail.xyz"
+  }
+}

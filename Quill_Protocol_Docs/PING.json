@@ -1,0 +1,8 @@
+{
+  "protocol": "quill",
+  "version": "1.0",
+  "type": "PING",
+  "timestamp": "2025-06-17T16:25:00Z",
+  "session_token": "abc123-quill-token",
+  "payload": {}
+}
