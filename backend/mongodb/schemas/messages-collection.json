@@ -1,0 +1,35 @@
+{
+  "_id": "66723223f0a5b2e9c1d0e3a4", // Represent ObjectId as a string
+  "messageId": "mock-msg-123",
+  "threadId": "mock-thread-456",
+  "from": "sender@quillmail.xyz",
+  "to": ["bob~quillmail.xyz"],
+  "cc": ["carol~quillmail.xyz", "dave~quillmail.xyz"],
+  "bcc": ["eve~quillmail.xyz"],
+  "subject": "Test email example",
+  "body": {
+    "content": [
+      {
+        "type": "text/plain",
+        "value": "This is a text message!"
+      },
+      {
+        "type": "text/html",
+        "value": "<p>Hi <strong>Bob</strong>,<br>See below.</p>"
+      }
+    ]
+  },
+  "attachments": [
+    {
+      "filename": "photo.jpg",
+      "mimetype": "image/jpeg",
+      "link": "..."
+    }
+  ],
+  "sentAt": "2025-06-19T11:34:31.000Z", // Represent ISODate as an ISO 8601 string
+  "options": {
+    "expiresInSeconds": 7200,
+    "oneTime": true,
+    "threadId": "thread-495abc7d"
+  }
+}
