@@ -79,7 +79,7 @@ type DomainFetchResult struct {
 type Message struct {
 	MessageID   string
 	ThreadID    string
-	From        []string
+	From        string
 	To          []string
 	CC          []string
 	BCC         []string

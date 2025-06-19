@@ -8,10 +8,8 @@ import (
 	"log"
 	"net"
 	"quill/pkg/domain"
-	"strings"
 	"time"
 )
-
 
 type authService interface {
 	Authenticate(ctx context.Context, token string) (context.Context, error)
@@ -27,7 +25,6 @@ type MessageHandler struct {
 	authSvc    authService
 	messageSvc messageService
 }
-
 
 func NewMessageHandler(as authService, ms messageService) *MessageHandler {
 	return &MessageHandler{
@@ -65,7 +62,7 @@ func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	ctx, err = h.authSvc.Authenticate(ctx, packet.SessionToken)
 	if err != nil {
 		log.Printf("WARN: authentication failed for client %s: %v", conn.RemoteAddr(), err)
-		h.writeErrorResponse(conn, "AUTH_FAILED", "Invalid or expired session token.")
+		h.writeErrorResponse(conn, ErrorCodeAuthFailed, "Invalid or expired session token.")
 		return
 	}
 
@@ -77,20 +74,20 @@ func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	}
 
 	switch packet.Type {
-	case "SEND":
+	case PacketTypeSend:
 		h.handleSend(ctx, conn, packet.Payload)
-	case "FETCH":
+	case PacketTypeFetch:
 		h.handleFetch(ctx, conn, packet.Payload)
 	default:
 		log.Printf("WARN: unknown packet type: '%s'", packet.Type)
-		h.writeErrorResponse(conn, "UNKNOWN_TYPE", "The packet type is not supported.")
+		h.writeErrorResponse(conn, ErrorCodeUnknownType, "The packet type is not supported.")
 	}
 }
 
 func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload json.RawMessage) {
 	var req SendPayload
 	if err := json.Unmarshal(payload, &req); err != nil {
-		h.writeErrorResponse(conn, "INVALID_PAYLOAD", "Cannot parse SEND payload: "+err.Error())
+		h.writeErrorResponse(conn, ErrorCodeInvalidPayload, "Cannot parse SEND payload: "+err.Error())
 		return
 	}
 
@@ -102,7 +99,7 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 		case domain.ContentTypePlainText, domain.ContentTypeHTML:
 			// valid
 		default:
-			h.writeErrorResponse(conn, "INVALID_CONTENT_TYPE", fmt.Sprintf("Invalid content type %q; must be %q or %q", cp.Type, domain.ContentTypePlainText, domain.ContentTypeHTML))
+			h.writeErrorResponse(conn, ErrorCodeInvalidContentType, fmt.Sprintf("Invalid content type %q; must be %q or %q", cp.Type, domain.ContentTypePlainText, domain.ContentTypeHTML))
 			return
 		}
 		contents = append(contents, domain.Content{Type: ct, Value: cp.Value})
@@ -149,25 +146,25 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 	result, err := h.messageSvc.Send(ctx, domainReq)
 	if err != nil {
 		log.Printf("ERROR: service call to Send failed: %v", err)
-		h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to send the message.")
+		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to send the message.")
 		return
 	}
 
 	// 6) Construct and send response
 	resp := SendResponsePayload{
-		Status:      "OK",
+		Status:      StatusOK,
 		MessageID:   result.MessageID,
 		ThreadID:    result.ThreadID,
 		DeliveredTo: result.DeliveredTo,
 		QueuedFor:   result.QueuedFor,
 	}
-	h.writeResponse(conn, "SEND_RESPONSE", resp)
+	h.writeResponse(conn, PacketTypeSendResponse, resp)
 }
 
 func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload json.RawMessage) {
 	var req FetchPayload
 	if err := json.Unmarshal(payload, &req); err != nil {
-		h.writeErrorResponse(conn, "INVALID_PAYLOAD", "Cannot parse FETCH payload: "+err.Error())
+		h.writeErrorResponse(conn, ErrorCodeInvalidPayload, "Cannot parse FETCH payload: "+err.Error())
 		return
 	}
 
@@ -179,7 +176,7 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 	case string(domain.FetchModeFolder):
 		mode = domain.FetchModeFolder
 	default:
-		h.writeErrorResponse(conn, "INVALID_MODE", fmt.Sprintf(
+		h.writeErrorResponse(conn, ErrorCodeInvalidMode, fmt.Sprintf(
 			"Invalid fetch mode %q; must be %q or %q", req.Mode,
 			string(domain.FetchModeThread), string(domain.FetchModeFolder),
 		))
@@ -216,7 +213,7 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 	result, err := h.messageSvc.Fetch(ctx, domainReq)
 	if err != nil {
 		log.Printf("ERROR: service call to Fetch failed: %v", err)
-		h.writeErrorResponse(conn, "SERVICE_ERROR", "Failed to fetch messages.")
+		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to fetch messages.")
 		return
 	}
 
@@ -238,7 +235,7 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 		dtos[i] = MessageDTO{
 			MessageID:   m.MessageID,
 			ThreadID:    m.ThreadID,
-			From:        strings.Join(m.From, ","),
+			From:        m.From,
 			To:          m.To,
 			CC:          m.CC,
 			BCC:         m.BCC,
@@ -253,14 +250,14 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 
 	// 5) Construct and send response
 	resp := FetchResponsePayload{
-		Status:   "OK",
+		Status:   StatusOK,
 		Mode:     req.Mode,
 		Messages: dtos,
 		Total:    result.Total,
 		Limit:    result.Limit,
 		Offset:   result.Offset,
 	}
-	h.writeResponse(conn, "FETCH_RESPONSE", resp)
+	h.writeResponse(conn, PacketTypeFetchResponse, resp)
 }
 
 func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload interface{}) {
@@ -271,8 +268,8 @@ func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload
 	}
 
 	responsePacket := Packet{
-		Protocol:  "quill",
-		Version:   "1.0",
+		Protocol:  ProtocolName,
+		Version:   ProtocolVersion,
 		Type:      packetType,
 		Timestamp: time.Now().UTC(),
 		Payload:   payloadBytes,
@@ -285,9 +282,9 @@ func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload
 
 func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string) {
 	errorPayload := ErrorResponsePayload{
-		Status:  "ERROR",
+		Status:  StatusError,
 		Code:    code,
 		Message: message,
 	}
-	h.writeResponse(conn, "ERROR_RESPONSE", errorPayload)
+	h.writeResponse(conn, PacketTypeErrorResponse, errorPayload)
 }

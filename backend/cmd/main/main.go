@@ -34,9 +34,9 @@ func main() {
 	log.Println("Starting Quill server...")
 
 	authSvc, err := quill.InitAuthServiceFromEnv(context.Background(), "../../../.env")
-    if err != nil {
-        log.Fatalf("auth init failed: %v", err)
-    }
+	if err != nil {
+		log.Fatalf("auth init failed: %v", err)
+	}
 
 	// Create the mock message service
 	msgSvc := &MockMessageService{}
@@ -52,4 +52,3 @@ func main() {
 		log.Fatalf("FATAL: could not start server: %v", err)
 	}
 }
-
