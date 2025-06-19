@@ -28,10 +28,7 @@ type Packet struct {
 
 func main() {
 	// Hardcoded JSON directory relative to this file's location
-	jsonDir := "../Quill_Protocol_JSON/Requests"
-
-	// Optional: load .env file
-	_ = godotenv.Load("../.env")
+	jsonDir := "C:\\Users\\assij\\GolandProjects\\Quill\\backend\\tests\\Quill_Protocol_JSON\\Requests\\send"
 
 	// Prompt for Firebase token each run
 	reader := bufio.NewReader(os.Stdin)
@@ -120,7 +117,7 @@ func sendAndReceive(addr string, pkt *Packet) (*Packet, error) {
 // sendAndReceiveTLS connects over TLS, sends pkt, and returns the decoded response.
 func sendAndReceiveTLS(addr string, pkt *Packet) (*Packet, error) {
 	// 1) Load the self-signed cert so we can trust it
-	caPath := "../../../certificate/quill.crt"
+	caPath := "../certificate/quill.crt"
 	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
 		return nil, fmt.Errorf("could not read CA file %s: %w", caPath, err)

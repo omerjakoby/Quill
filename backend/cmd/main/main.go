@@ -14,7 +14,7 @@ import (
 
 func main() {
 	log.Println("Starting Quill server...")
-	authSvc, err := quill.InitAuthServiceFromEnv(context.Background(), "../../../.env")
+	authSvc, err := quill.InitAuthServiceFromEnv(context.Background(), "../.env")
 	if err != nil {
 		log.Fatalf("auth init failed: %v", err)
 	}
@@ -59,10 +59,12 @@ func main() {
 	server := quill.NewServer(serverAddr, messageHandler)
 
 	log.Printf("INFO: starting Quill protocol server on %s", serverAddr)
-	// if err := server.Start(); err != nil {
-	// 	log.Fatalf("FATAL: could not start server: %v", err)
-	// }
-	if err := server.StartTLS("../../../certificate/quill.crt", "../../../certificate/quill.key"); err != nil {
+	/*if err := server.Start(); err != nil {
+		log.Fatalf("FATAL: could not start server: %v", err)
+	}
+	*/
+
+	if err := server.StartTLS("../certificate/quill.crt", "../certificate/quill.key"); err != nil {
 		log.Fatalf("FATAL: could not start TLS server: %v", err)
 	}
 }

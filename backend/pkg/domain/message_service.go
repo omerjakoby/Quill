@@ -134,16 +134,15 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 				ReceivedAt: now,
 			})
 		}
-
-		// Insert all mailbox entries
-		if len(mailboxEntries) > 0 {
-			_, err = m.mailboxCollection.InsertMany(ctx, mailboxEntries)
-			if err != nil {
-				log.Printf("Failed to insert mailbox entries: %v", err)
-				// Consider handling this error (perhaps delete the message?)
-			}
-		}
 	*/
+	// Insert all mailbox entries
+	if len(mailboxEntries) > 0 {
+		_, err = m.mailboxCollection.InsertMany(ctx, mailboxEntries)
+		if err != nil {
+			log.Printf("Failed to insert mailbox entries: %v", err)
+			// Consider handling this error (perhaps delete the message?)
+		}
+	}
 
 	return DomainSendResult{
 		MessageID:   messageID,
