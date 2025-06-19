@@ -19,6 +19,7 @@ type Packet struct {
 
 // SEND
 type SendPayload struct {
+	From        string       `json:"from"`
 	To          []string     `json:"to"`
 	CC          []string     `json:"cc,omitempty"`
 	BCC         []string     `json:"bcc,omitempty"`
@@ -61,7 +62,6 @@ type FetchPayload struct {
 // PING
 
 type PingPayload struct{}
-
 
 // --- Payload definitions for server responses --- //
 
@@ -109,6 +109,6 @@ type MessageDTO struct {
 // PING response
 
 type PingResponsePayload struct {
-    Status       string `json:"status"`
-    ServerTime   string `json:"server_time"`
+	Status     string `json:"status"`
+	ServerTime string `json:"server_time"`
 }

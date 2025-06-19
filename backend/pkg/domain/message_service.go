@@ -2,13 +2,14 @@ package domain
 
 import (
 	"context"
-	"log"
-	"time"
-
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"log"
+	"quill/cmd/main/constants"
+	"strings"
+	"time"
 )
 
 // MockMessageService implements the MessageService interface with mock data
@@ -83,7 +84,8 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 	messageDoc := bson.M{
 		"messageId":   messageID,
 		"threadId":    threadID,
-		"from":        userID,
+		"fromID":      userID,
+		"fromMail":    req.From,
 		"to":          req.To,
 		"cc":          req.CC,
 		"bcc":         req.BCC,
@@ -117,24 +119,35 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 		ReceivedAt: now,
 	})
 	// TODO send messages to the recipients
-	/*
-		// Add entries for recipients (in "inbox" folder) (optional)
-		// maybe we should do this
-		allRecipients := append([]string{}, req.To...)
-		allRecipients = append(allRecipients, req.CC...)
-		allRecipients = append(allRecipients, req.BCC...)
 
-		for _, recipient := range allRecipients {
-			mailboxEntries = append(mailboxEntries, mailboxEntry{
-				UserID:     recipient,
-				MessageID:  messageID,
-				ThreadID:   threadID,
-				Folder:     "inbox",
-				Read:       false,
-				ReceivedAt: now,
-			})
+	allRecipients := []string{}
+	for _, addr := range req.To {
+		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
+			allRecipients = append(allRecipients, addr)
 		}
-	*/
+
+	}
+	for _, addr := range req.CC {
+		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
+			allRecipients = append(allRecipients, addr)
+		}
+	}
+	for _, addr := range req.BCC {
+		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
+			allRecipients = append(allRecipients, addr)
+		}
+	}
+	for _, recipient := range allRecipients {
+		mailboxEntries = append(mailboxEntries, mailboxEntry{
+			UserID:     recipient,
+			MessageID:  messageID,
+			ThreadID:   threadID,
+			Folder:     "inbox",
+			Read:       false,
+			ReceivedAt: now,
+		})
+	}
+
 	// Insert all mailbox entries
 	if len(mailboxEntries) > 0 {
 		_, err = m.mailboxCollection.InsertMany(ctx, mailboxEntries)
