@@ -78,6 +78,8 @@ func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 		h.handleSend(ctx, conn, packet.Payload)
 	case PacketTypeFetch:
 		h.handleFetch(ctx, conn, packet.Payload)
+	case PacketTypePing:
+		h.handlePing(conn)
 	default:
 		log.Printf("WARN: unknown packet type: '%s'", packet.Type)
 		h.writeErrorResponse(conn, ErrorCodeUnknownType, "The packet type is not supported.")
@@ -258,6 +260,15 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 		Offset:   result.Offset,
 	}
 	h.writeResponse(conn, PacketTypeFetchResponse, resp)
+}
+
+func (h *MessageHandler) handlePing(conn net.Conn) {
+
+	respPayload := PingResponsePayload{
+		Status:     StatusOK,
+		ServerTime: time.Now().UTC().Format(time.RFC3339),
+	}
+	h.writeResponse(conn, PacketTypePingResponse, respPayload)
 }
 
 func (h *MessageHandler) writeResponse(conn net.Conn, packetType string, payload interface{}) {

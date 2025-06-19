@@ -12,6 +12,8 @@ const (
 	PacketTypeSendResponse  = "SEND_RESPONSE"
 	PacketTypeFetchResponse = "FETCH_RESPONSE"
 	PacketTypeErrorResponse = "ERROR_RESPONSE"
+	PacketTypePing = "PING"
+	PacketTypePingResponse = "PING_RESPONSE"
 
 	// Error-response payload “status”
 	StatusOK    = "OK"

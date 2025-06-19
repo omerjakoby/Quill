@@ -58,6 +58,11 @@ type FetchPayload struct {
 	Offset   int    `json:"offset,omitempty"`
 }
 
+// PING
+
+type PingPayload struct{}
+
+
 // --- Payload definitions for server responses --- //
 
 // generic error reply
@@ -99,4 +104,11 @@ type MessageDTO struct {
 	SentAt      time.Time    `json:"timestamp"`
 	Read        bool         `json:"read"`
 	Flags       []string     `json:"flags,omitempty"`
+}
+
+// PING response
+
+type PingResponsePayload struct {
+    Status       string `json:"status"`
+    ServerTime   string `json:"server_time"`
 }
