@@ -6,10 +6,8 @@
     width: 100%;
     background-color: #FDFCFA;
     color: black;
-    border-bottom-style: solid;
-    border-top-style: solid;
-    border-color: #706d6d;
-    border-width:1px;
+    border-bottom: 0.05rem solid #949191;
+    height: 7rem;
 }
 .bar button{
     border:none;
@@ -41,12 +39,11 @@
     
 }
 .main-account-container{
+    width: 23rem;
     padding: 2rem 3rem 2rem 2rem;
     font-size: 1.2rem;
     font-family: 'Inter', sans-serif;
-    border-right-style: solid;
-    border-width: 1px;
-    border-color: #706d6d;
+    border-right: 0.05rem solid #949191;
 
 }
 

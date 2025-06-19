@@ -43,9 +43,7 @@ function App() {
   return user ? (
     <MainWebsite user={user} handleSignOut={handleSignOut} />
   ) : (
-    <body>
-      <LoginPage/>
-    </body>
+    <LoginPage/>
     
   );
 }
