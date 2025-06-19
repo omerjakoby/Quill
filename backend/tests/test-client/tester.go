@@ -28,10 +28,10 @@ type Packet struct {
 
 func main() {
 	// Hardcoded JSON directory relative to this file's location
-	jsonDir := "../Quill_Protocol_JSON/Requests"
+	jsonDir := "tests/Quill_Protocol_JSON/Requests"
 
 	// Optional: load .env file
-	_ = godotenv.Load("../../../.env")
+	_ = godotenv.Load("../.env")
 
 	// Prompt for Firebase token each run
 	reader := bufio.NewReader(os.Stdin)
