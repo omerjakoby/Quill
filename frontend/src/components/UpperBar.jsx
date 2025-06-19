@@ -18,7 +18,7 @@ function Bar({user, handleSignOut}) {
       <div className="bar">
         <button className="barherf">Mail</button>
         <button className="barherf">contacts</button>
-        <button className="barherf">Calender</button>
+        <button className="barherf">Calendar</button>
       </div>
       <div>
         <img src={logoFull} className="logo" />
