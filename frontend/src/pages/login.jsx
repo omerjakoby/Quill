@@ -44,9 +44,9 @@ function LoginPage() {
   };
 
   return (
-    //<div className="background-container">
+    <div className="background-container">
       <div className="auth-page-container">
-      <img src={logo} alt="Quill Logo" className="logo"></img>
+      <img src={logo} alt="Quill Logo" className="Login-logo"></img>
       <h1>Welcome to Quill</h1>
       <p>The modern mail transfer protocol</p>
       <button className="google-signin-button" onClick={handleGoogleSignIn}>
@@ -54,7 +54,7 @@ function LoginPage() {
         <span>continue with Google</span>
       </button>
     </div>
-  //</div>
+  </div>
     
   );
 }

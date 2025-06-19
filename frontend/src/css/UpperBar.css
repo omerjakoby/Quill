@@ -11,15 +11,18 @@
     border-color: #706d6d;
     border-width:1px;
 }
-.barherf{
+.bar button{
+    border:none;
+    background-color: transparent;
     text-decoration: none;
     color: black;
     font-size: 1.2rem;
+    font-family: 'Inter', sans-serif;
     padding: 2rem 2rem 2rem 2rem;
     position: left;
     margin-left: 1rem;
 }
-.barherf:hover{
+.bar button:hover{
     text-decoration: none;
     color: rgb(221, 15, 15);
     font-size: 1.2rem;
@@ -37,13 +40,36 @@
     gap:2rem;
     
 }
-.quill{
-    padding: 2rem 15rem 2rem 2rem;
-    font-size: 2rem;
-    font-family: 'Courier New', Courier, monospace;
+.main-account-container{
+    padding: 2rem 3rem 2rem 2rem;
+    font-size: 1.2rem;
+    font-family: 'Inter', sans-serif;
     border-right-style: solid;
     border-width: 1px;
     border-color: #706d6d;
 
 }
 
+.user-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+}
+.user-info span {
+  padding-right: 8rem;
+}
+.user-info button {
+  border: none;
+  color: black;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.5rem 1rem 0.5rem 1rem;
+}
+
+.profile-pic {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  justify-content: center;
+}

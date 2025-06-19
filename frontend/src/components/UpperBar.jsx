@@ -1,14 +1,24 @@
 import '../css/UpperBar.css';
 import logoFull from '../assets/logo-full-white.png';
 
-function Bar() {
+function Bar({user, handleSignOut}) {
   return (
     <div className="block">
-        <div class="quill">Quill</div>
+      <div className="main-account-container">
+        <div className="user-info">
+          <span>Welcome {user.displayName}!</span>
+          <button onClick={handleSignOut}>Sign Out</button>
+          <img
+            src={user.photoURL}
+            alt="User profile"
+            className="profile-pic"
+          />
+        </div>         
+      </div>
       <div className="bar">
-        <a href="#home" className="barherf">Mail</a>
-        <a href="#about" className="barherf">Contacts</a>
-        <a href="#contact" className="barherf">Calander</a>
+        <button className="barherf">Mail</button>
+        <button className="barherf">contacts</button>
+        <button className="barherf">Calender</button>
       </div>
       <div>
         <img src={logoFull} className="logo" />
