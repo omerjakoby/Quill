@@ -263,7 +263,6 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 }
 
 func (h *MessageHandler) handlePing(conn net.Conn) {
-
 	respPayload := PingResponsePayload{
 		Status:     StatusOK,
 		ServerTime: time.Now().UTC().Format(time.RFC3339),

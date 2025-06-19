@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,7 +30,7 @@ type Packet struct {
 
 func main() {
 	// Hardcoded JSON directory relative to this file's location
-	jsonDir := "tests/Quill_Protocol_JSON/Requests"
+	jsonDir := "../Quill_Protocol_JSON/Requests"
 
 	// Optional: load .env file
 	_ = godotenv.Load("../.env")
@@ -83,7 +85,7 @@ func main() {
 		prettyPrint("Request", pkt)
 
 		// Send packet and receive response
-		resp, err := sendAndReceive(*addr, &pkt)
+		resp, err := sendAndReceiveTLS(*addr, &pkt)
 		if err != nil {
 			log.Fatalf("Error during send/receive: %v", err)
 		}
@@ -114,6 +116,50 @@ func sendAndReceive(addr string, pkt *Packet) (*Packet, error) {
 		}
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	return &resp, nil
+}
+
+// sendAndReceiveTLS connects over TLS, sends pkt, and returns the decoded response.
+func sendAndReceiveTLS(addr string, pkt *Packet) (*Packet, error) {
+	// 1) Load the self-signed cert so we can trust it
+	caPath := "../../../certificate/quill.crt"
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read CA file %s: %w", caPath, err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to append CA cert")
+	}
+
+	// 2) Build a TLS config that trusts that cert
+	tlsCfg := &tls.Config{
+		RootCAs:            roots,
+		ServerName:         "localhost", // must match the CN in quill.crt
+		InsecureSkipVerify: true,
+	}
+
+	// 3) Dial via TLS instead of plain TCP
+	conn, err := tls.Dial("tcp", addr, tlsCfg)
+	if err != nil {
+		return nil, fmt.Errorf("tls.Dial(%q) failed: %w", addr, err)
+	}
+	defer conn.Close()
+
+	// 4) Send your Packet as JSON
+	if err := json.NewEncoder(conn).Encode(pkt); err != nil {
+		return nil, fmt.Errorf("failed to send packet: %w", err)
+	}
+
+	// 5) Read and decode the JSON response
+	var resp Packet
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("connection closed by server")
+		}
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
 	return &resp, nil
 }
 
