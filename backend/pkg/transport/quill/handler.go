@@ -111,9 +111,9 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 	atts := make([]domain.Attachment, 0, len(req.Attachments))
 	for _, a := range req.Attachments {
 		atts = append(atts, domain.Attachment{
-			Filename:      a.Filename,
-			Mimetype:      a.Mimetype,
-			ContentBase64: a.ContentBase64,
+			Filename: a.Filename,
+			Mimetype: a.Mimetype,
+			URL:      a.ContentBase64,
 		})
 	}
 
@@ -231,7 +231,7 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 		// map attachments
 		atts := make([]Attachment, len(m.Attachments))
 		for k, a := range m.Attachments {
-			atts[k] = Attachment{Filename: a.Filename, Mimetype: a.Mimetype, ContentBase64: a.ContentBase64}
+			atts[k] = Attachment{Filename: a.Filename, Mimetype: a.Mimetype, ContentBase64: a.URL}
 		}
 
 		dtos[i] = MessageDTO{

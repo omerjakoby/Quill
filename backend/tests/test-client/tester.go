@@ -12,8 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
 // Packet mirrors the server's transport packet structure.
@@ -28,10 +26,7 @@ type Packet struct {
 
 func main() {
 	// Hardcoded JSON directory relative to this file's location
-	jsonDir := "tests/Quill_Protocol_JSON/Requests"
-
-	// Optional: load .env file
-	_ = godotenv.Load("../.env")
+	jsonDir := "tests/Quill_Protocol_JSON/Requests/send"
 
 	// Prompt for Firebase token each run
 	reader := bufio.NewReader(os.Stdin)

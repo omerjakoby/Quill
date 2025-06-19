@@ -5,13 +5,24 @@ import (
 )
 
 // ----- SEND Request and Result -----
+
+// Attachment represents an attachment *after* it's been uploaded to GCS.
+// It will be sent by the client and stored directly in the DB.
+type Attachment struct {
+	Filename string `bson:"filename"` // For MongoDB persistence
+	Mimetype string `bson:"mimetype"` // For MongoDB persistence
+	URL      string `bson:"url"`      // The URL to the GCS object, for MongoDB persistence
+}
+
+// DomainSendRequest is the structure of the incoming email data.
+// Attachments now directly include the GCS URL.
 type DomainSendRequest struct {
 	To          []string
 	CC          []string
 	BCC         []string
 	Subject     string
 	Body        Body
-	Attachments []Attachment
+	Attachments []Attachment // Directly uses the 'Attachment' struct with GCS URL
 	Options     SendOptions
 }
 
@@ -33,18 +44,14 @@ const (
 	ContentTypeHTML      ContentType = "text/html"
 )
 
-type Attachment struct {
-	Filename      string
-	Mimetype      string
-	ContentBase64 string
-}
-
+// SendOptions provides additional parameters for sending.
 type SendOptions struct {
 	ExpiresInSeconds *int
 	OneTime          *bool
 	ThreadID         *string
 }
 
+// DomainSendResult is what's returned after a successful send operation.
 type DomainSendResult struct {
 	MessageID   string
 	ThreadID    string
@@ -61,6 +68,7 @@ const (
 	FetchModeFolder FetchMode = "folder"
 )
 
+// DomainFetchRequest specifies how messages should be fetched.
 type DomainFetchRequest struct {
 	Mode     FetchMode
 	ThreadID *string
@@ -69,6 +77,7 @@ type DomainFetchRequest struct {
 	Offset   *int
 }
 
+// DomainFetchResult contains the fetched messages and pagination info.
 type DomainFetchResult struct {
 	Total    int
 	Limit    int
@@ -76,6 +85,7 @@ type DomainFetchResult struct {
 	Messages []Message
 }
 
+// Message is the full email structure returned during a fetch operation.
 type Message struct {
 	MessageID   string
 	ThreadID    string
@@ -85,7 +95,7 @@ type Message struct {
 	BCC         []string
 	Subject     string
 	Body        Body
-	Attachments []Attachment
+	Attachments []Attachment // Still uses the Attachment struct with the URL
 	SentAt      time.Time
 	Read        bool
 	Flags       []string

@@ -40,11 +40,11 @@ func (s *firebaseAuthService) Authenticate(
 	}
 
 	// Token is valid. Attach the Firebase User ID (UID) to the context.
-	return context.WithValue(ctx, userKey, token.UID), nil
+	return context.WithValue(ctx, "userID", token.UID), nil
 }
 
 func UserIDFromContext(ctx context.Context) (string, bool) {
-	v := ctx.Value(userKey)
+	v := ctx.Value("userID")
 	id, ok := v.(string)
 	return id, ok
 }

@@ -1,5 +1,6 @@
+// Example Document in 'messages' collection (how it will look in MongoDB)
 {
-  "_id": "66723223f0a5b2e9c1d0e3a4", // Represent ObjectId as a string
+  "_id": ObjectId("66723223f0a5b2e9c1d0e3a4"),
   "messageId": "mock-msg-123",
   "threadId": "mock-thread-456",
   "from": "sender@quillmail.xyz",
@@ -12,10 +13,6 @@
       {
         "type": "text/plain",
         "value": "This is a text message!"
-      },
-      {
-        "type": "text/html",
-        "value": "<p>Hi <strong>Bob</strong>,<br>See below.</p>"
       }
     ]
   },
@@ -23,10 +20,10 @@
     {
       "filename": "photo.jpg",
       "mimetype": "image/jpeg",
-      "link": "..."
+      "url": "https://storage.googleapis.com/your-bucket/attachments/message-folder/unique-photo.jpg" // GCS URL
     }
   ],
-  "sentAt": "2025-06-19T11:34:31.000Z", // Represent ISODate as an ISO 8601 string
+  "sentAt": ISODate("2025-06-19T11:34:31.000Z"),
   "options": {
     "expiresInSeconds": 7200,
     "oneTime": true,

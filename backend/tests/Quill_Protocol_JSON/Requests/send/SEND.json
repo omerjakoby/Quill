@@ -31,7 +31,7 @@
         "options": {
             "expires_in_seconds": 7200,
             "one_time": true,
-            "thread_id": "thread-495abc7d"
+            "thread_id": ""
         }
     }
 }
