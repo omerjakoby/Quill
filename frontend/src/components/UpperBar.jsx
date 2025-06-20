@@ -2,6 +2,7 @@ import '../css/UpperBar.css';
 import logoFull from '../assets/logo-full-white.png';
 
 function Bar({user, handleSignOut}) {
+  console.log("User in Bar component:", user);
   return (
     <div className="block">
       <div className="main-account-container">
@@ -9,6 +10,7 @@ function Bar({user, handleSignOut}) {
           <span>Welcome {user.displayName}!</span>
           <button onClick={handleSignOut}>Sign Out</button>
           <img
+            
             src={user.photoURL}
             alt="User profile"
             className="profile-pic"

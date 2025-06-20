@@ -2,6 +2,7 @@ import {auth} from '../services/firebaseConfig';
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import "../css/login.css"; 
 import logo from "../assets/logo-full-white-removebg-preview.png";
+import LetterGlitch from '../assets/LetterGlitch';
 
 // A simple component for the Google 'G' logo
 const GoogleIcon = () => (
@@ -45,6 +46,14 @@ function LoginPage() {
 
   return (
     <div className="background-container">
+      <div className="glitch-fullscreen-background">
+        <LetterGlitch
+          glitchSpeed={50}
+          centerVignette={true}
+          outerVignette={false}
+          smooth={true}
+        />
+      </div>
       <div className="auth-page-container">
       <img src={logo} alt="Quill Logo" className="Login-logo"></img>
       <h1>Welcome to Quill</h1>
