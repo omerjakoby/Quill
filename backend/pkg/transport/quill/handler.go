@@ -38,7 +38,12 @@ func NewMessageHandler(as authService, ms messageService) *MessageHandler {
 }
 
 func (h *MessageHandler) Handle(conn net.Conn) {
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+
+		}
+	}(conn)
 	log.Printf("INFO: new client connected: %s", conn.RemoteAddr())
 
 	decoder := json.NewDecoder(conn)
@@ -163,14 +168,14 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 			From:        req.From,
 			To:          req.To,
 			CC:          req.CC,
-			BCC:         []string{},
+			BCC:         req.BCC,
 			Subject:     req.Subject,
 			Body:        req.Body,
 			Attachments: req.Attachments,
 			Options: SendOptions{
 				ExpiresInSeconds: req.Options.ExpiresInSeconds,
 				OneTime:          req.Options.OneTime,
-				ThreadID:         req.Options.ThreadID,
+				ThreadID:         result.ThreadID,
 			},
 		}
 		for _, addr := range result.QueuedFor {
@@ -385,7 +390,12 @@ func sendAndReceiveTLS(addr string, pkt *Packet) (*Packet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tls.Dial(%q) failed: %w", addr, err)
 	}
-	defer conn.Close()
+	defer func(conn *tls.Conn) {
+		err := conn.Close()
+		if err != nil {
+
+		}
+	}(conn)
 
 	// 4) Send your Packet as JSON
 	if err := json.NewEncoder(conn).Encode(pkt); err != nil {

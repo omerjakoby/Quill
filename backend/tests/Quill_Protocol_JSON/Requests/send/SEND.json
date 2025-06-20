@@ -5,11 +5,11 @@
     "session_token": "...",
     "time_stamp": "2025-06-17T15:45:12Z",
     "payload": {
-        "message_id": "msg-1234567890",
+        "message_id": "",
         "from": "alice~quillmail.xyz",
         "to": ["bob~quillmail.xyz"],
         "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
-        "bcc": ["eve~localhost:63342"],
+        "bcc": ["eve~localhost:6334"],
         "subject": "Test email example",
         "body":{
             "content":[

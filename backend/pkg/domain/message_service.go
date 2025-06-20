@@ -64,27 +64,42 @@ type mailboxEntry struct {
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
 func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-	if req.From == constants.DOMAIN_NAME {
+	if extractDomain(req.From) == constants.DOMAIN_NAME {
 		return m.SendInternal(ctx, req)
 	}
 	return m.SendExternal(ctx, req)
 }
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-	// Extract sender ID from context
-	userID, ok := ctx.Value("userID").(string)
-	if !ok {
-		return DomainSendResult{}, ErrUserNotAuthenticated
-	}
-	// Generate new message ID and thread ID if not provided
-	messageID := uuid.New().String()
-	threadID := uuid.New().String()
-	if req.Options.ThreadID != nil && *req.Options.ThreadID != "" {
-		threadID = *req.Options.ThreadID
+	// 1. Validate or generate messageID
+	var messageID string
+	if req.MessageID != "" {
+		if !isUUID(req.MessageID) {
+			return DomainSendResult{},
+				errorString("invalid message ID: must be a UUID")
+		}
+		messageID = req.MessageID
+	} else {
+		messageID = uuid.New().String()
 	}
 
-	// Prepare message document
+	// 2. Validate or generate threadID
+	var threadID string
+	if req.Options.ThreadID != nil && *req.Options.ThreadID != "" {
+		if !isUUID(*req.Options.ThreadID) {
+			return DomainSendResult{},
+				errorString("invalid thread ID: must be a UUID")
+		}
+		threadID = *req.Options.ThreadID
+	} else {
+		threadID = uuid.New().String()
+	}
+
+	// From is always within our domain here
+	userID := req.From
 	now := time.Now().UTC()
+
+	// Prepare the message document
 	messageDoc := bson.M{
 		"messageId":   messageID,
 		"fromID":      userID,
@@ -103,66 +118,56 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 		},
 	}
 
-	// Insert message into messages collection
-	_, err := m.db.GetMessagesCollection().InsertOne(ctx, messageDoc)
-	if err != nil {
+	// Insert into messages collection
+	if _, err := m.db.GetMessagesCollection().
+		InsertOne(ctx, messageDoc); err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
 	}
 
-	// Create mailbox entries for all recipients (including sender's sent folder)
-	var mailboxEntries []interface{}
+	// Build mailbox entries
+	entries := []interface{}{
+		mailboxEntry{
+			UserID:     userID,
+			MessageID:  messageID,
+			ThreadID:   threadID,
+			Folder:     "sent",
+			Read:       true,
+			ReceivedAt: now,
+		},
+	}
 
-	// Add entry for sender (in "sent" folder)
-	mailboxEntries = append(mailboxEntries, mailboxEntry{
-		UserID:     userID,
-		MessageID:  messageID,
-		ThreadID:   threadID,
-		Folder:     "sent",
-		Read:       true,
-		ReceivedAt: now,
-	})
-	allRecipients := append(req.To, req.CC...)
-	allRecipients = append(allRecipients, req.BCC...)
-
-	var internalRecipients []string
-	var externalRecipients []string
-
+	allRecipients := append(append(req.To, req.CC...), req.BCC...)
+	var internal, external []string
 	for _, addr := range allRecipients {
 		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
-			internalRecipients = append(internalRecipients, addr)
+			internal = append(internal, addr)
+			entries = append(entries, mailboxEntry{
+				UserID:     addr,
+				MessageID:  messageID,
+				ThreadID:   threadID,
+				Folder:     "inbox",
+				Read:       false,
+				ReceivedAt: now,
+			})
 		} else {
-			// For external domains, you would typically queue the message
-			// for sending via an SMTP gateway or another email service.
-			externalRecipients = append(externalRecipients, addr)
+			external = append(external, addr)
 		}
 	}
 
-	for _, recipient := range internalRecipients {
-		mailboxEntries = append(mailboxEntries, mailboxEntry{
-			UserID:     recipient,
-			MessageID:  messageID,
-			ThreadID:   threadID,
-			Folder:     "inbox",
-			Read:       false,
-			ReceivedAt: now,
-		})
-	}
-
-	// Insert all mailbox entries
-	if len(mailboxEntries) > 0 {
-		_, err = m.db.GetMailboxesCollection().InsertMany(ctx, mailboxEntries)
-		if err != nil {
+	if len(entries) > 0 {
+		if _, err := m.db.GetMailboxesCollection().
+			InsertMany(ctx, entries); err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
-			// Consider handling this error (perhaps delete the message?)
+			// consider rollback of the message?
 		}
 	}
 
 	return DomainSendResult{
 		MessageID:   messageID,
 		ThreadID:    threadID,
-		DeliveredTo: internalRecipients,
-		QueuedFor:   externalRecipients, // These are queued for external delivery
+		DeliveredTo: internal,
+		QueuedFor:   external,
 	}, nil
 }
 

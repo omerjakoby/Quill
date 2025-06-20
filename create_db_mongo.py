@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 
 # Your provided Atlas URI
-ATLAS_URI = 
+ATLAS_URI = "mongodb+srv://Admin:vJjBkNP5ak7jYQi6@cluster0.ynuwtha.mongodb.net/"
 
 try:
     client = MongoClient(ATLAS_URI)
