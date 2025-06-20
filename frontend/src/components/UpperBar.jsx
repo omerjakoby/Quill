@@ -9,21 +9,20 @@ function Bar({user, handleSignOut}) {
   return (
     <div className="block">
       <div className="main-account-container">
-        <div className="user-info">
-          <span>Welcome {user.displayName}!</span>
-          <button onClick={handleSignOut}>Sign Out</button>
-          <img
-            
+        <div className="user-info">        
+          <img        
             src={user.photoURL}
             alt="User profile"
             className="profile-pic"
           />
+          <button onClick={handleSignOut}>Sign Out</button>
+          
         </div>         
       </div>
-      <div className="bar">
+      <div className="search-bar">
          <Box   
            component="form"
-           sx={{ '& > :not(style)': { m: 2, width: '40ch' } }}
+           sx={{ '& > :not(style)': { m: 2, width: '60ch' } }}
            noValidate
            autoComplete="off"
           >

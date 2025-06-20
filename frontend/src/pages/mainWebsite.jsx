@@ -1,9 +1,16 @@
 import Bar from '../components/UpperBar';
 import Content from '../components/Content';    
 import SideBar from '../components/SideBar';
-import Demo from '../components/demo';
+import Inbox from '../components/Inbox';
+import Unread from '../components/Unread';
+import Compose from '../components/Compose';
+import Sent from '../components/SentMail';
 import '../css/MainWebsite.css';
 import { Routes,Route } from 'react-router-dom';
+
+
+
+
 function MainWebsite({ user, handleSignOut }) {
   return (
     <div className="main-website-container">
@@ -17,7 +24,10 @@ function MainWebsite({ user, handleSignOut }) {
         <div className="content-area">
           <Routes>
             <Route path="/" element={<Content user={user} handleSignOut={handleSignOut} />} />
-            <Route path="/Demo" element={<Demo user={user} handleSignOut={handleSignOut} />} />
+            <Route path="/Compose" element={<Compose/>} />
+            <Route path="/Unread" element={<Unread user={user} handleSignOut={handleSignOut}/>} />
+            <Route path="/Inbox" element={<Inbox />} />
+            <Route path="/Sent" element={<Sent />} />
           </Routes>
         </div>
      </div>
