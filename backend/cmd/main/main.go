@@ -52,7 +52,7 @@ func main() {
 
 	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)
 
-	serverAddr := "localhost:9876"
+	serverAddr := "localhost:6334"
 	server := quill.NewServer(serverAddr, messageHandler)
 
 	log.Printf("INFO: starting Quill protocol server on %s", serverAddr)

@@ -72,16 +72,17 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
 	// Extract sender ID from context
-	userID, ok := ctx.Value("userID").(string)
-	if !ok {
-		return DomainSendResult{}, ErrUserNotAuthenticated
-	}
+	//userID, ok := ctx.Value("userID").(string)
+	//if !ok {
+	//		return DomainSendResult{}, ErrUserNotAuthenticated
+	//}
 	// Generate new message ID and thread ID if not provided
 	messageID := uuid.New().String()
 	threadID := uuid.New().String()
 	if req.Options.ThreadID != nil && *req.Options.ThreadID != "" {
 		threadID = *req.Options.ThreadID
 	}
+	userID := req.From
 
 	// Prepare message document
 	now := time.Now().UTC()

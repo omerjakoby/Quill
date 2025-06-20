@@ -139,6 +139,7 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 
 	// 4) Build domain request
 	domainReq := domain.DomainSendRequest{
+		MessageID:   req.MessageID,
 		From:        req.From,
 		To:          req.To,
 		CC:          req.CC,
