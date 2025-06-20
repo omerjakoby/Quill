@@ -2,12 +2,16 @@ package quill
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"os"
 	"quill/pkg/domain"
+	"strings"
 	"time"
 )
 
@@ -152,8 +156,40 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to send the message.")
 		return
 	}
+	// 6) send packet to non Quill users
+	if len(result.QueuedFor) > 0 {
+		sendReq := SendPayload{
+			MessageID:   result.MessageID,
+			From:        req.From,
+			To:          req.To,
+			CC:          req.CC,
+			BCC:         []string{},
+			Subject:     req.Subject,
+			Body:        req.Body,
+			Attachments: req.Attachments,
+			Options: SendOptions{
+				ExpiresInSeconds: req.Options.ExpiresInSeconds,
+				OneTime:          req.Options.OneTime,
+				ThreadID:         req.Options.ThreadID,
+			},
+		}
+		for _, addr := range result.QueuedFor {
+			if addr == "" {
+				continue // skip empty addresses
+			}
+			addr = extractDomain(addr)
+			sendResult, err := sendQuillMessage(addr, sendReq)
+			if err != nil {
+				log.Printf("ERROR: failed to send message to %s: %v", addr, err)
+				h.writeErrorResponse(conn, ErrorCodeDeliveryFailed, fmt.Sprintf("Failed to queue message for %s: %v", addr, err))
+				continue
+			}
+			log.Printf("INFO: queued message %s for external delivery to %s", sendResult, addr)
 
-	// 6) Construct and send response
+			log.Printf("INFO: Queued message %s for external delivery to %s", result.MessageID, addr)
+		}
+	}
+	// 7) Construct and send response
 	resp := SendResponsePayload{
 		Status:      StatusOK,
 		MessageID:   result.MessageID,
@@ -298,4 +334,79 @@ func (h *MessageHandler) writeErrorResponse(conn net.Conn, code, message string)
 		Message: message,
 	}
 	h.writeResponse(conn, PacketTypeErrorResponse, errorPayload)
+}
+
+func sendQuillMessage(
+	addr string,
+	payload SendPayload,
+) (*Packet, error) {
+	// Marshall the SendPayload into a raw JSON message.
+	// This is crucial because our Packet struct expects json.RawMessage for Payload.
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal SendPayload: %w", err)
+	}
+
+	// Construct the main Quill Packet.
+	pkt := Packet{
+		Protocol:  "quill",
+		Version:   "1.0",
+		Type:      "SEND",
+		Timestamp: time.Now().UTC(),
+		Payload:   json.RawMessage(payloadBytes), // Assign the marshaled bytes
+	}
+
+	// Use your existing sendAndReceiveTLS function.
+	fmt.Println("Attempting to send Quill message...")
+	return sendAndReceiveTLS(addr, &pkt)
+}
+
+func sendAndReceiveTLS(addr string, pkt *Packet) (*Packet, error) {
+	// 1) Load the self-signed cert so we can trust it
+	caPath := "../certificate/quill.crt"
+	caPEM, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, fmt.Errorf("could not read CA file %s: %w", caPath, err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("failed to append CA cert")
+	}
+
+	// 2) Build a TLS config that trusts that cert
+	tlsCfg := &tls.Config{
+		RootCAs:            roots,
+		ServerName:         "localhost", // must match the CN in quill.crt
+		InsecureSkipVerify: true,
+	}
+
+	// 3) Dial via TLS instead of plain TCP
+	conn, err := tls.Dial("tcp", addr, tlsCfg)
+	if err != nil {
+		return nil, fmt.Errorf("tls.Dial(%q) failed: %w", addr, err)
+	}
+	defer conn.Close()
+
+	// 4) Send your Packet as JSON
+	if err := json.NewEncoder(conn).Encode(pkt); err != nil {
+		return nil, fmt.Errorf("failed to send packet: %w", err)
+	}
+
+	// 5) Read and decode the JSON response
+	var resp Packet
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		if err == io.EOF {
+			return nil, fmt.Errorf("connection closed by server")
+		}
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &resp, nil
+}
+func extractDomain(input string) string {
+	lastTildeIndex := strings.LastIndex(input, "~")
+	if lastTildeIndex != -1 {
+		return input[lastTildeIndex+1:]
+	}
+	return ""
 }

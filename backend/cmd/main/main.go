@@ -47,10 +47,7 @@ func main() {
 	log.Println("Connected to MongoDB successfully")
 
 	// Create message service using MongoDB
-	msgSvc := domain.NewMongoMessageService(
-		mongoDB.GetMessagesCollection(),
-		mongoDB.GetMailboxesCollection(),
-	)
+	msgSvc := domain.NewMongoMessageService(mongoDB)
 	log.Println("Created MongoDB-backed message service")
 
 	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)

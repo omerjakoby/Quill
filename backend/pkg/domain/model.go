@@ -17,6 +17,7 @@ type Attachment struct {
 // DomainSendRequest is the structure of the incoming email data.
 // Attachments now directly include the GCS URL.
 type DomainSendRequest struct {
+	MessageID   string // Optional, for tracking purposes
 	From        string
 	To          []string
 	CC          []string

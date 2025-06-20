@@ -12,8 +12,8 @@ const (
 	PacketTypeSendResponse  = "SEND_RESPONSE"
 	PacketTypeFetchResponse = "FETCH_RESPONSE"
 	PacketTypeErrorResponse = "ERROR_RESPONSE"
-	PacketTypePing = "PING"
-	PacketTypePingResponse = "PING_RESPONSE"
+	PacketTypePing          = "PING"
+	PacketTypePingResponse  = "PING_RESPONSE"
 
 	// Error-response payload “status”
 	StatusOK    = "OK"
@@ -26,4 +26,6 @@ const (
 	ErrorCodeInvalidContentType = "INVALID_CONTENT_TYPE"
 	ErrorCodeServiceError       = "SERVICE_ERROR"
 	ErrorCodeInvalidMode        = "INVALID_MODE"
+	ErrorCodeDeliveryFailed     = "DELIVERY_FAILED"
+	ErrInvalidDomain            = "INVALID_DOMAIN"
 )

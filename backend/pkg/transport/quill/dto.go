@@ -19,6 +19,7 @@ type Packet struct {
 
 // SEND
 type SendPayload struct {
+	MessageID   string       `json:"message_id,omitempty"`
 	From        string       `json:"from"`
 	To          []string     `json:"to"`
 	CC          []string     `json:"cc,omitempty"`

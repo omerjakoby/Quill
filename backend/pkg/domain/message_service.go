@@ -4,10 +4,10 @@ import (
 	"context"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"quill/cmd/main/constants"
+	"quill/pkg/db"
 	"strings"
 	"time"
 )
@@ -42,15 +42,13 @@ func (m *MockMessageService) Fetch(ctx context.Context, req DomainFetchRequest) 
 
 // MongoMessageService implements the MessageService interface with MongoDB storage
 type MongoMessageService struct {
-	messagesCollection *mongo.Collection
-	mailboxCollection  *mongo.Collection
+	db *db.MongoDB
 }
 
 // NewMongoMessageService creates a new MongoDB-backed MessageService
-func NewMongoMessageService(messagesCollection, mailboxCollection *mongo.Collection) *MongoMessageService {
+func NewMongoMessageService(db *db.MongoDB) *MongoMessageService {
 	return &MongoMessageService{
-		messagesCollection: messagesCollection,
-		mailboxCollection:  mailboxCollection,
+		db: db,
 	}
 }
 
@@ -66,15 +64,21 @@ type mailboxEntry struct {
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
 func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+	if req.From == constants.DOMAIN_NAME {
+		return m.SendInternal(ctx, req)
+	}
+	return m.SendExternal(ctx, req)
+}
+
+func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
 	// Extract sender ID from context
 	userID, ok := ctx.Value("userID").(string)
 	if !ok {
 		return DomainSendResult{}, ErrUserNotAuthenticated
 	}
-
 	// Generate new message ID and thread ID if not provided
 	messageID := uuid.New().String()
-	threadID := messageID
+	threadID := uuid.New().String()
 	if req.Options.ThreadID != nil && *req.Options.ThreadID != "" {
 		threadID = *req.Options.ThreadID
 	}
@@ -83,7 +87,6 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 	now := time.Now().UTC()
 	messageDoc := bson.M{
 		"messageId":   messageID,
-		"threadId":    threadID,
 		"fromID":      userID,
 		"fromMail":    req.From,
 		"to":          req.To,
@@ -96,11 +99,12 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 		"options": bson.M{
 			"expiresInSeconds": req.Options.ExpiresInSeconds,
 			"oneTime":          req.Options.OneTime,
+			"threadID":         threadID,
 		},
 	}
 
 	// Insert message into messages collection
-	_, err := m.messagesCollection.InsertOne(ctx, messageDoc)
+	_, err := m.db.GetMessagesCollection().InsertOne(ctx, messageDoc)
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
@@ -118,26 +122,23 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 		Read:       true,
 		ReceivedAt: now,
 	})
-	// TODO send messages to the recipients
+	allRecipients := append(req.To, req.CC...)
+	allRecipients = append(allRecipients, req.BCC...)
 
-	allRecipients := []string{}
-	for _, addr := range req.To {
-		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
-			allRecipients = append(allRecipients, addr)
-		}
+	var internalRecipients []string
+	var externalRecipients []string
 
-	}
-	for _, addr := range req.CC {
+	for _, addr := range allRecipients {
 		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
-			allRecipients = append(allRecipients, addr)
+			internalRecipients = append(internalRecipients, addr)
+		} else {
+			// For external domains, you would typically queue the message
+			// for sending via an SMTP gateway or another email service.
+			externalRecipients = append(externalRecipients, addr)
 		}
 	}
-	for _, addr := range req.BCC {
-		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
-			allRecipients = append(allRecipients, addr)
-		}
-	}
-	for _, recipient := range allRecipients {
+
+	for _, recipient := range internalRecipients {
 		mailboxEntries = append(mailboxEntries, mailboxEntry{
 			UserID:     recipient,
 			MessageID:  messageID,
@@ -150,7 +151,7 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 
 	// Insert all mailbox entries
 	if len(mailboxEntries) > 0 {
-		_, err = m.mailboxCollection.InsertMany(ctx, mailboxEntries)
+		_, err = m.db.GetMailboxesCollection().InsertMany(ctx, mailboxEntries)
 		if err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
 			// Consider handling this error (perhaps delete the message?)
@@ -160,8 +161,99 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 	return DomainSendResult{
 		MessageID:   messageID,
 		ThreadID:    threadID,
-		DeliveredTo: req.To,
-		QueuedFor:   []string{}, // In a real implementation, this might contain addresses that couldn't be delivered immediately
+		DeliveredTo: internalRecipients,
+		QueuedFor:   externalRecipients, // These are queued for external delivery
+	}, nil
+}
+
+func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+
+	// Generate new message ID and thread ID if not provided
+	myRecipients := []string{}
+	for _, addr := range req.To {
+		if extractDomain(addr) == constants.DOMAIN_NAME {
+			myRecipients = append(myRecipients, addr)
+		}
+	}
+	for _, addr := range req.CC {
+		if extractDomain(addr) == constants.DOMAIN_NAME {
+			myRecipients = append(myRecipients, addr)
+		}
+	}
+	for _, addr := range req.BCC {
+		if extractDomain(addr) == constants.DOMAIN_NAME {
+			myRecipients = append(myRecipients, addr)
+		}
+	}
+
+	threadID := *req.Options.ThreadID
+	if !(req.Options.ThreadID != nil && *req.Options.ThreadID != "") {
+		return DomainSendResult{}, errorString("did not provide thread ID")
+	}
+	messageID := req.MessageID
+	if !(req.MessageID != "") {
+		return DomainSendResult{}, errorString("did not provide message ID")
+	}
+
+	exists, err := m.db.MessageIDExists(ctx, messageID)
+	if err != nil {
+		log.Printf("failed to check if message exists: %v", err)
+		return DomainSendResult{}, err
+	}
+	if exists {
+		return DomainSendResult{}, errorString("message with this ID already exists")
+	}
+
+	// Prepare message document
+	now := time.Now().UTC()
+	messageDoc := bson.M{
+		"messageId":   messageID,
+		"fromMail":    req.From,
+		"to":          req.To,
+		"cc":          req.CC,
+		"subject":     req.Subject,
+		"body":        req.Body,
+		"attachments": req.Attachments,
+		"sentAt":      now,
+		"options": bson.M{
+			"expiresInSeconds": req.Options.ExpiresInSeconds,
+			"oneTime":          req.Options.OneTime,
+			"threadID":         threadID,
+		},
+	}
+
+	// Insert message into messages collection
+	_, err = m.db.GetMessagesCollection().InsertOne(ctx, messageDoc)
+	if err != nil {
+		log.Printf("Failed to insert message: %v", err)
+		return DomainSendResult{}, err
+	}
+
+	// Create mailbox entries for all recipients (including sender's sent folder)
+	var mailboxEntries []interface{}
+
+	for _, recipient := range myRecipients {
+		mailboxEntries = append(mailboxEntries, mailboxEntry{
+			UserID:     recipient,
+			MessageID:  messageID,
+			ThreadID:   threadID,
+			Folder:     "inbox",
+			Read:       false,
+			ReceivedAt: now,
+		})
+	}
+	// Insert all mailbox entries
+	if len(mailboxEntries) > 0 {
+		_, err = m.db.GetMailboxesCollection().InsertMany(ctx, mailboxEntries)
+		if err != nil {
+			log.Printf("Failed to insert mailbox entries: %v", err)
+			// Consider handling this error (perhaps delete the message?)
+		}
+	}
+
+	return DomainSendResult{
+		MessageID: messageID,
+		ThreadID:  threadID,
 	}, nil
 }
 
@@ -205,7 +297,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	}
 
 	// Get total count of matching messages
-	total, err := m.mailboxCollection.CountDocuments(ctx, filter)
+	total, err := m.db.GetMailboxesCollection().CountDocuments(ctx, filter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
@@ -216,11 +308,15 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit))
 
-	cursor, err := m.mailboxCollection.Find(ctx, filter, findOptions)
+	cursor, err := m.db.GetMailboxesCollection().Find(ctx, filter, findOptions)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
-	defer cursor.Close(ctx)
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			log.Printf("Error closing cursor: %v", err)
+		}
+	}()
 
 	// Collect message IDs from mailbox entries
 	var entries []mailboxEntry
@@ -246,11 +342,15 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 
 	// Fetch the actual messages
 	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
-	messageCursor, err := m.messagesCollection.Find(ctx, messageFilter)
+	messageCursor, err := m.db.GetMessagesCollection().Find(ctx, messageFilter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
-	defer messageCursor.Close(ctx)
+	defer func() {
+		if err := messageCursor.Close(ctx); err != nil {
+			log.Printf("Error closing message cursor: %v", err)
+		}
+	}()
 
 	// Map to store messages by ID for quick lookup
 	messageMap := make(map[string]bson.M)
@@ -340,4 +440,12 @@ type errorString string
 
 func (e errorString) Error() string {
 	return string(e)
+}
+
+func extractDomain(input string) string {
+	lastTildeIndex := strings.LastIndex(input, "~")
+	if lastTildeIndex != -1 {
+		return input[lastTildeIndex+1:]
+	}
+	return ""
 }
