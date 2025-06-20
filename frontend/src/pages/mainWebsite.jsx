@@ -1,7 +1,9 @@
 import Bar from '../components/UpperBar';
 import Content from '../components/Content';    
 import SideBar from '../components/SideBar';
+import Demo from '../components/demo';
 import '../css/MainWebsite.css';
+import { Routes,Route } from 'react-router-dom';
 function MainWebsite({ user, handleSignOut }) {
   return (
     <div className="main-website-container">
@@ -13,7 +15,10 @@ function MainWebsite({ user, handleSignOut }) {
           <SideBar />
         </div>
         <div className="content-area">
-          <Content user={user} handleSignOut={handleSignOut} />
+          <Routes>
+            <Route path="/" element={<Content user={user} handleSignOut={handleSignOut} />} />
+            <Route path="/Demo" element={<Demo user={user} handleSignOut={handleSignOut} />} />
+          </Routes>
         </div>
      </div>
     </div>

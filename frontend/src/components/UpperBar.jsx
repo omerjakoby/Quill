@@ -1,5 +1,8 @@
 import '../css/UpperBar.css';
 import logoFull from '../assets/logo-full-white.png';
+import Box from '@mui/material/Box';
+import TextField from '@mui/material/TextField';
+
 
 function Bar({user, handleSignOut}) {
   console.log("User in Bar component:", user);
@@ -18,9 +21,14 @@ function Bar({user, handleSignOut}) {
         </div>         
       </div>
       <div className="bar">
-        <button className="barherf">Mail</button>
-        <button className="barherf">contacts</button>
-        <button className="barherf">Calendar</button>
+         <Box   
+           component="form"
+           sx={{ '& > :not(style)': { m: 2, width: '40ch' } }}
+           noValidate
+           autoComplete="off"
+          >
+           <TextField id="filled-basic" label="search" variant="filled" />
+         </Box>
       </div>
       <div>
         <img src={logoFull} alt="Full White Logo" className="logo" />
