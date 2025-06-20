@@ -187,7 +187,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}
 
 	threadID := *req.Options.ThreadID
-	if !(req.Options.ThreadID != nil && *req.Options.ThreadID != "") {
+	if !(req.Options.ThreadID != nil && *req.Options.ThreadID != "") || isUUID(*req.Options.ThreadID) == false {
 		return DomainSendResult{}, errorString("did not provide thread ID")
 	}
 	messageID := req.MessageID
@@ -448,4 +448,9 @@ func extractDomain(input string) string {
 		return input[lastTildeIndex+1:]
 	}
 	return ""
+}
+
+func isUUID(input string) bool {
+	_, err := uuid.Parse(input)
+	return err == nil
 }
