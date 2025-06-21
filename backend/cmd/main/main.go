@@ -62,7 +62,7 @@ func main() {
 
 	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)
 
-	quillServerAddr := "localhost:9876"
+	quillServerAddr := "localhost:6334"
 	quillServer := quill.NewServer(quillServerAddr, messageHandler)
 
 	// --- Start Quill Server in a Goroutine ---
@@ -79,7 +79,7 @@ func main() {
 	}()
 
 	// --- Add HTTP Server Setup ---
-	httpServerAddr := "localhost:8080"
+	httpServerAddr := "localhost:1080"
 	httpMux := http.NewServeMux()
 	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello, Omer! This is the HTTP server speaking from %s\n", r.Host)

@@ -67,21 +67,21 @@ func (h *MessageHandler) dispatch(conn net.Conn, packet *Packet) {
 	ctx := context.Background()
 
 	//The `packet.SessionToken` is the Firebase ID Token.
-	var err error
-	ctx, err = h.authSvc.Authenticate(ctx, packet.SessionToken)
-	if err != nil {
-		log.Printf("WARN: authentication failed for client %s: %v", conn.RemoteAddr(), err)
-		h.writeErrorResponse(conn, ErrorCodeAuthFailed, "Invalid or expired session token.")
-		return
-	}
+	/*	var err error
+		ctx, err = h.authSvc.Authenticate(ctx, packet.SessionToken)
+		if err != nil {
+			log.Printf("WARN: authentication failed for client %s: %v", conn.RemoteAddr(), err)
+			h.writeErrorResponse(conn, ErrorCodeAuthFailed, "Invalid or expired session token.")
+			return
+		}
 
-	if userID, ok := UserIDFromContext(ctx); ok {
-		log.Printf("INFO: client %s authenticated as user '%s'. Received packet type '%s'",
-			conn.RemoteAddr(), userID, packet.Type)
-	} else {
-		log.Printf("WARN: Authenticated context missing userID for client %s", conn.RemoteAddr())
-	}
-
+		if userID, ok := UserIDFromContext(ctx); ok {
+			log.Printf("INFO: client %s authenticated as user '%s'. Received packet type '%s'",
+				conn.RemoteAddr(), userID, packet.Type)
+		} else {
+			log.Printf("WARN: Authenticated context missing userID for client %s", conn.RemoteAddr())
+		}
+	*/
 	switch packet.Type {
 	case PacketTypeSend:
 		h.handleSend(ctx, conn, packet.Payload)
@@ -144,6 +144,7 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 
 	// 4) Build domain request
 	domainReq := domain.DomainSendRequest{
+		MessageID:   req.MessageID,
 		From:        req.From,
 		To:          req.To,
 		CC:          req.CC,
