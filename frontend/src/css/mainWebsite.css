@@ -1,0 +1,28 @@
+.main-website-container { 
+  display: flex;
+  flex-direction: column; /* Stacks children vertically */
+  overflow: hidden;      /* Prevents overflow of the main container */
+  height: 100vh
+}
+.top-bar-container {
+  flex-shrink: 0; /* Prevents the top bar from shrinking if content is too large */
+}
+.content-container {
+  margin-top: 7rem;  
+  display: flex;
+  flex-direction: row; /* Places children side-by-side (this is the default) */
+  flex-grow: 1;      /* --- THIS IS A KEY PIECE OF MAGIC --- */
+}
+.sidebar-container {
+  padding-left: 1rem;  
+  width: 25.5rem; 
+  flex-shrink: 0; 
+  background-color: #ffffff; 
+  border-right: 0.05rem solid #cfc8c8;
+}
+
+.content-area {
+  flex-grow: 1;      /* --- THIS IS THE OTHER KEY PIECE OF MAGIC --- */
+  padding: 1rem;     /* Give the content some internal spacing */
+  overflow-y: auto;  /* If content is too long, ONLY this area will scroll */
+}

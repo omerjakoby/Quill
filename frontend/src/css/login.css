@@ -11,7 +11,14 @@
   left: 0;
   overflow: hidden; /* Good practice for full-screen wrappers */
 }
-
+.glitch-fullscreen-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1; /* Lower z-index to be in the background */
+}
 
 .auth-page-container {
   display: flex;

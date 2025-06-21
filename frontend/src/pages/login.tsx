@@ -1,7 +1,9 @@
+import React from 'react';
 import {auth} from '../services/firebaseConfig';
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import "../css/login.css"; 
 import logo from "../assets/logo-full-white-removebg-preview.png";
+import LetterGlitch from '../assets/LetterGlitch';
 
 // A simple component for the Google 'G' logo
 const GoogleIcon = () => (
@@ -38,13 +40,34 @@ function LoginPage() {
       await signInWithPopup(auth, provider);
       // If login is successful, the listener in App.jsx will automatically
       // handle the "transfer" to the main website.
-    } catch (error) {
-      console.error("Authentication error:", error.message);
-    }
+    } catch (error: unknown) {
+       // 1. Explicitly type 'error' as 'unknown'
+      let errorMessage = "An unknown error occurred. Please try again.";
+
+      // 2. Check if the error is a standard JavaScript Error object
+       if (error instanceof Error) {
+        // Inside this 'if' block, TypeScript now KNOWS that 'error' has a .message property
+        console.error("Authentication error:", error.message);
+        errorMessage = `Login failed: ${error.message}`;
+      } 
+      else {
+        // If it's not an Error object, just log the whole thing
+        console.error("An unexpected error type was caught:", error);
+  
+      }
+    }  
   };
 
   return (
     <div className="background-container">
+      <div className="glitch-fullscreen-background">
+        <LetterGlitch
+          glitchSpeed={50}
+          centerVignette={true}
+          outerVignette={false}
+          smooth={true}
+        />
+      </div>
       <div className="auth-page-container">
       <img src={logo} alt="Quill Logo" className="Login-logo"></img>
       <h1>Welcome to Quill</h1>
