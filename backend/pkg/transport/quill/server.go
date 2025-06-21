@@ -49,7 +49,7 @@ func (s *Server) StartTLS(certFile, keyFile string) error {
 	// Load your X.509 certificate and private key
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		log.Fatalf("failed to load cert/key pair: %v", err)
+		log.Printf("ERROR: failed to load cert/key pair: %v", err)
 		return err
 	}
 
