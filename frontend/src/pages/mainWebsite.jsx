@@ -23,7 +23,7 @@ function MainWebsite({ user, handleSignOut }) {
         </div>
         <div className="content-area">
           <Routes>
-            <Route path="/" element={<Content user={user} handleSignOut={handleSignOut} />} />
+            <Route path="/" element={<Inbox/>} />
             <Route path="/Compose" element={<Compose/>} />
             <Route path="/Unread" element={<Unread user={user} handleSignOut={handleSignOut}/>} />
             <Route path="/Inbox" element={<Inbox />} />
