@@ -1,4 +1,4 @@
-// Example Document in 'user_mailbox_entries' collection
+// Example Document in 'mailbox' collection
 {
   "_id": ObjectId("66723223f0a5b2e9c1d0e3a5"),
   "userId": "user-alice-123",
