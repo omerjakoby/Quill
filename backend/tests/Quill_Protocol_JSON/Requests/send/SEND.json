@@ -5,7 +5,9 @@
     "session_token": "...",
     "time_stamp": "2025-06-17T15:45:12Z",
     "payload": {
-        "to": ["bob~quillmail.xyz"],
+        "message_id": "",
+        "from": "bob~quillmail.xyz",
+        "to": ["omer~quillmail.xyz"],
         "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
         "bcc": ["eve~quillmail.xyz"],
         "subject": "Test email example",
@@ -25,13 +27,13 @@
             {
                 "filename": "photo.jpg",
                 "mimetype": "image/jpeg",
-                "content_base64": "..."
+                "link": "..."
             }
         ],
         "options": {
             "expires_in_seconds": 7200,
             "one_time": true,
-            "thread_id": "thread-495abc7d"
+            "thread_id": ""
         }
     }
 }

@@ -1,0 +1,32 @@
+// Example Document in 'messages' collection (how it will look in MongoDB)
+{
+  "_id": ObjectId("66723223f0a5b2e9c1d0e3a4"),
+  "messageId": "mock-msg-123",
+  "threadId": "mock-thread-456",
+  "from": "sender@quillmail.xyz",
+  "to": ["bob~quillmail.xyz"],
+  "cc": ["carol~quillmail.xyz", "dave~quillmail.xyz"],
+  "bcc": ["eve~quillmail.xyz"],
+  "subject": "Test email example",
+  "body": {
+    "content": [
+      {
+        "type": "text/plain",
+        "value": "This is a text message!"
+      }
+    ]
+  },
+  "attachments": [
+    {
+      "filename": "photo.jpg",
+      "mimetype": "image/jpeg",
+      "url": "https://storage.googleapis.com/your-bucket/attachments/message-folder/unique-photo.jpg" // GCS URL
+    }
+  ],
+  "sentAt": ISODate("2025-06-19T11:34:31.000Z"),
+  "options": {
+    "expiresInSeconds": 7200,
+    "oneTime": true,
+    "threadId": "thread-495abc7d"
+  }
+}

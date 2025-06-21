@@ -19,6 +19,8 @@ type Packet struct {
 
 // SEND
 type SendPayload struct {
+	MessageID   string       `json:"message_id,omitempty"`
+	From        string       `json:"from"`
 	To          []string     `json:"to"`
 	CC          []string     `json:"cc,omitempty"`
 	BCC         []string     `json:"bcc,omitempty"`
@@ -57,6 +59,10 @@ type FetchPayload struct {
 	Limit    int    `json:"limit,omitempty"`
 	Offset   int    `json:"offset,omitempty"`
 }
+
+// PING
+
+type PingPayload struct{}
 
 // --- Payload definitions for server responses --- //
 
@@ -99,4 +105,11 @@ type MessageDTO struct {
 	SentAt      time.Time    `json:"timestamp"`
 	Read        bool         `json:"read"`
 	Flags       []string     `json:"flags,omitempty"`
+}
+
+// PING response
+
+type PingResponsePayload struct {
+	Status     string `json:"status"`
+	ServerTime string `json:"server_time"`
 }

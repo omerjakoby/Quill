@@ -1,0 +1,10 @@
+// Example Document in 'users' collection (how it will look in MongoDB)
+{
+  "_id": ObjectId("66723223f0a5b2e9c1d0e3a4"),
+  "userQuillMail": "sender~quillmail.xyz",
+  "userEmail": "sender@gmail.com",
+  "usersUID": "4534rgrvsxg43ger65fwe",
+  "CreatedAt": ISODate("2025-06-19T11:34:31.000Z"),
+  "lastLogin": ISODate("2025-06-19T11:34:31.000Z"),
+
+}

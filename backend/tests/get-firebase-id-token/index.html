@@ -92,6 +92,7 @@
 
         <br>
         <button id="signOutButton">Sign Out</button>
+        <button id="refreshID">Refresh</button>
     </div>
 </div>
 
@@ -140,6 +141,7 @@
     const userNameSpan = document.getElementById('userName');
     const userEmailSpan = document.getElementById('userEmail');
     const idTokenDiv = document.getElementById('idToken');
+    const refreshIDButton = document.getElementById('refreshID');
 
     // Sign-in logic
     signInButton.onclick = () => {
@@ -158,6 +160,23 @@
             console.error(`Sign-in error (${errorCode}): ${errorMessage}`);
         });
     };
+
+    refreshIDButton.onclick = () => {
+        // Refresh the ID token
+        idTokenDiv.textContent = 'Refreshing token...';
+        auth.currentUser.getIdToken(/* forceRefresh */ true)
+            .then((idToken) => {
+                console.log("Successfully refreshed ID Token.");
+                // Display the new token
+                idTokenDiv.textContent = idToken;
+            })
+            .catch((error) => {
+                console.error("Error refreshing ID Token:", error);
+                idTokenDiv.textContent = `Error refreshing token: ${error.message}`;
+            });
+
+        };
+
 
     // Sign-out logic
     signOutButton.onclick = () => {

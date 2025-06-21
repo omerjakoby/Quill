@@ -1,0 +1,10 @@
+// Example Document in 'mailbox' collection
+{
+  "_id": ObjectId("66723223f0a5b2e9c1d0e3a5"),
+  "userId": "user-alice-123",
+  "messageId": ObjectId("66723223f0a5b2e9c1d0e3a4"),
+  "folder": "sent",
+  "read": true,
+  "flags": ["starred", "important"],
+  "receivedAt": ISODate("2025-06-19T11:34:31.000Z")
+}

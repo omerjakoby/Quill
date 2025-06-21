@@ -1,4 +1,4 @@
-.env
+../Quill6334/.env
 backend/quill-mtp-firebase-adminsdk-fbsvc-fdf19b7204.json
 .idea
 logs
@@ -69,3 +69,8 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+certificate/
+.env
+
+

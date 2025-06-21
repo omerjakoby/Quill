@@ -1,6 +1,7 @@
 package quill
 
 import (
+	"crypto/tls"
 	"log"
 	"net"
 )
@@ -44,4 +45,37 @@ func (s *Server) Start() error {
 	}
 }
 
-//
+func (s *Server) StartTLS(certFile, keyFile string) error {
+	// Load your X.509 certificate and private key
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		log.Printf("ERROR: failed to load cert/key pair: %v", err)
+		return err
+	}
+
+	// Configure TLS settings (e.g. require at least TLS1.2)
+	tlsCfg := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	// Create a TLS listener instead of a plain TCP one
+	listener, err := tls.Listen("tcp", s.addr, tlsCfg)
+	if err != nil {
+		log.Fatalf("failed to start TLS listener: %v", err)
+		return err
+	}
+	defer listener.Close()
+
+	log.Printf("TLS server listening on %s", s.addr)
+
+	// Accept and handle connections just like in Start()
+	for {
+		conn, err := listener.Accept() // returns a *tls.Conn
+		if err != nil {
+			log.Printf("ERROR: could not accept TLS connection: %v", err)
+			continue
+		}
+		go s.handler.Handle(conn)
+	}
+}
