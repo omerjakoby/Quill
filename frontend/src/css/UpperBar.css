@@ -6,12 +6,10 @@
     width: 100%;
     background-color: #FDFCFA;
     color: black;
-    border-bottom-style: solid;
-    border-top-style: solid;
-    border-color: #706d6d;
-    border-width:1px;
+    border-bottom: 0.05rem solid #cfc8c8;
+    height: 7rem;
 }
-.bar button{
+.search-bar button{
     border:none;
     background-color: transparent;
     text-decoration: none;
@@ -22,7 +20,7 @@
     position: left;
     margin-left: 1rem;
 }
-.bar button:hover{
+.search-bar button:hover{
     text-decoration: none;
     color: rgb(221, 15, 15);
     font-size: 1.2rem;
@@ -32,7 +30,7 @@
     height: 6.5rem;
     padding: 0.5rem 1rem 0rem 4rem;    
 }
-.bar{
+.search-bar{
     display: flex;
     width: 100%;
     padding: 1rem 1rem 1rem 0.2rem;
@@ -41,12 +39,11 @@
     
 }
 .main-account-container{
+    width: 23rem;
     padding: 2rem 3rem 2rem 2rem;
     font-size: 1.2rem;
     font-family: 'Inter', sans-serif;
-    border-right-style: solid;
-    border-width: 1px;
-    border-color: #706d6d;
+
 
 }
 
@@ -55,6 +52,7 @@
   align-items: center;
   justify-content: center;
   gap: 1.2rem;
+  padding-right:15rem;
 }
 .user-info span {
   padding-right: 8rem;
