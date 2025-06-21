@@ -6,9 +6,9 @@
     "time_stamp": "2025-06-17T15:45:12Z",
     "payload": {
         "message_id": "",
-        "from": "alice~quillmail.xyz",
-        "to": ["bob~quillmail.xyz"],
-        "cc":["carol~localhost:6334", "Dave~quillmail.xyz"],
+        "from": "bob~quillmail.xyz",
+        "to": ["omer~quillmail.xyz"],
+        "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
         "bcc": ["eve~quillmail.xyz"],
         "subject": "Test email example",
         "body":{

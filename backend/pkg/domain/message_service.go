@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
@@ -412,34 +413,29 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 // Helper function to convert BSON to Message domain object
 func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	// This is a simplified conversion - in a real implementation you'd need to handle all fields properly
+	thredid := bsonMsg["options"].(bson.M)["threadID"].(string)
 	msg := Message{
 		MessageID: bsonMsg["messageId"].(string),
-		ThreadID:  bsonMsg["threadId"].(string),
-		From:      bsonMsg["from"].(string),
+		ThreadID:  thredid,
+		From:      bsonMsg["fromID"].(string),
 		Read:      read,
 	}
 
 	// Handle array fields
-	if to, ok := bsonMsg["to"].([]interface{}); ok {
-		for _, t := range to {
+	if pArr, ok := bsonMsg["to"].(primitive.A); ok {
+		// pArr is now of type primitive.A, which behaves exactly like []interface{}
+		// for iteration purposes.
+		for _, t := range pArr {
 			if str, ok := t.(string); ok {
 				msg.To = append(msg.To, str)
 			}
 		}
 	}
 
-	if cc, ok := bsonMsg["cc"].([]interface{}); ok {
+	if cc, ok := bsonMsg["cc"].(primitive.A); ok {
 		for _, c := range cc {
 			if str, ok := c.(string); ok {
 				msg.CC = append(msg.CC, str)
-			}
-		}
-	}
-
-	if bcc, ok := bsonMsg["bcc"].([]interface{}); ok {
-		for _, b := range bcc {
-			if str, ok := b.(string); ok {
-				msg.BCC = append(msg.BCC, str)
 			}
 		}
 	}
@@ -450,12 +446,27 @@ func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	}
 
 	// Handle sentAt
-	if sentAt, ok := bsonMsg["sentAt"].(time.Time); ok {
-		msg.SentAt = sentAt
+	if sentAtDT, ok := bsonMsg["sentAt"].(primitive.DateTime); ok {
+		msg.SentAt = sentAtDT.Time()
 	}
 
-	// Other fields would be converted similarly
-	// This is simplified for brevity
+	// Handle body
+	if body, ok := bsonMsg["body"].(bson.M); ok {
+		if contentArr, ok := body["content"].(primitive.A); ok {
+			for _, c := range contentArr {
+				if contentMap, ok := c.(bson.M); ok {
+					var contentItem Content
+					if t, ok := contentMap["type"].(ContentType); ok {
+						contentItem.Type = t
+					}
+					if v, ok := contentMap["value"].(string); ok {
+						contentItem.Value = v
+					}
+					msg.Body.Content = append(msg.Body.Content, contentItem)
+				}
+			}
+		}
+	}
 
 	return msg
 }
