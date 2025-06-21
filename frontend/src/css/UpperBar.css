@@ -1,0 +1,73 @@
+.block{
+    display: flex;
+    position: fixed;
+    top: 0;
+    left:0;
+    width: 100%;
+    background-color: #FDFCFA;
+    color: black;
+    border-bottom: 0.05rem solid #cfc8c8;
+    height: 7rem;
+}
+.search-bar button{
+    border:none;
+    background-color: transparent;
+    text-decoration: none;
+    color: black;
+    font-size: 1.2rem;
+    font-family: 'Inter', sans-serif;
+    padding: 2rem 2rem 2rem 2rem;
+    position: left;
+    margin-left: 1rem;
+}
+.search-bar button:hover{
+    text-decoration: none;
+    color: rgb(221, 15, 15);
+    font-size: 1.2rem;
+}
+.logo{
+    right:0;
+    height: 6.5rem;
+    padding: 0.5rem 1rem 0rem 4rem;    
+}
+.search-bar{
+    display: flex;
+    width: 100%;
+    padding: 1rem 1rem 1rem 0.2rem;
+    justify-content: flex-start;
+    gap:2rem;
+    
+}
+.main-account-container{
+    width: 23rem;
+    padding: 2rem 3rem 2rem 2rem;
+    font-size: 1.2rem;
+    font-family: 'Inter', sans-serif;
+
+
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  padding-right:15rem;
+}
+.user-info span {
+  padding-right: 8rem;
+}
+.user-info button {
+  border: none;
+  color: black;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0.5rem 1rem 0.5rem 1rem;
+}
+
+.profile-pic {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  justify-content: center;
+}
