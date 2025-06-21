@@ -1,16 +1,16 @@
 // src/App.jsx
 
 import { useState, useEffect } from "react";
-import { auth } from "./services/firebaseConfig";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { auth } from "./services/firebaseConfig.ts";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 
 // Import our two main pages
 import LoginPage from "./pages/login";
 import MainWebsite from "./pages/mainWebsite";
 
 function App() {
-  const [user, setUser] = useState(null); // Holds user data if logged in
-  const [loading, setLoading] = useState(true); // Shows a loading state initially
+  const [user, setUser] = useState<User|null>(null); // Holds user data if logged in
+  const [loading, setLoading] = useState<boolean>(true); // Shows a loading state initially
 
   // This is the core of our logic. It listens for changes in login state.
   useEffect(() => {

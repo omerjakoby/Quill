@@ -3,15 +3,22 @@ import logoFull from '../assets/logo-full-white.png';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 
+import { User } from 'firebase/auth'; // Importing User type from Firebase Auth
 
-function Bar({user, handleSignOut}) {
+
+interface TopBarProps {
+  user: User | null; // 'user' can be a Firebase User object OR null
+  handleSignOut: () => Promise<void>;
+}
+
+function Bar({user, handleSignOut}: TopBarProps) {
   console.log("User in Bar component:", user);
   return (
     <div className="block">
       <div className="main-account-container">
         <div className="user-info">        
           <img        
-            src={user.photoURL}
+            src={user?.photoURL?? undefined}
             alt="User profile"
             className="profile-pic"
           />
