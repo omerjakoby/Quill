@@ -28,7 +28,7 @@ func (m *MongoDB) EnsureUniqueUserIndexes(ctx context.Context) error {
 	_, err := collection.Indexes().CreateOne(ctx, quillMailIndexModel)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			fmt.Printf("Warning: Could not create unique index on userQuillMail due to existing duplicates. Please clean data. Error: %v\n", err)
+			log.Printf("Warning: Could not create unique index on userQuillMail due to existing duplicates. Please clean data. Error: %v\n", err)
 		} else {
 			return fmt.Errorf("failed to create unique index on userQuillMail: %w", err)
 		}
