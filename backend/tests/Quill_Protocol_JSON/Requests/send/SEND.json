@@ -9,7 +9,7 @@
         "from": "alice~quillmail.xyz",
         "to": ["bob~quillmail.xyz"],
         "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
-        "bcc": ["eve~localhost:6334"],
+        "bcc": ["eve~quillmail.xyz"],
         "subject": "Test email example",
         "body":{
             "content":[

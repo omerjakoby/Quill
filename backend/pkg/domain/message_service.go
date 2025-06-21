@@ -285,8 +285,8 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	var filter bson.M
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		filter = bson.M{
-			"userId":   userID,
-			"threadId": *req.ThreadID,
+			"userId":           userID,
+			"options.threadID": *req.ThreadID,
 		}
 	} else if req.Mode == FetchModeFolder && req.Folder != nil {
 		filter = bson.M{
