@@ -4,18 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/joho/godotenv"
 	"log"
 	"net/http" // Import the net/http package
 	"os"
 	"os/signal" // For graceful shutdown
+	"strings"
+	"syscall" // For graceful shutdown
+	"time"
+
+	"github.com/joho/godotenv"
+
 	"quill/pkg/db"
 	"quill/pkg/domain"
 	"quill/pkg/models"
 	"quill/pkg/transport/quill"
-	"strings"
-	"syscall" // For graceful shutdown
-	"time"
 )
 
 func main() {
@@ -30,7 +32,11 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// --- Existing Quill Server Setup ---
-	authSvc, err := quill.InitAuthServiceFromEnv(ctx, "../.env") // Pass context
+	// Auth Service needs its own context for initialization which might be short-lived
+	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer authSvcCancel()
+
+	authSvc, err := quill.InitAuthServiceFromEnv(authSvcCtx, "../.env") // Pass context
 	if err != nil {
 		log.Fatalf("auth init failed: %v", err)
 	}
@@ -56,6 +62,18 @@ func main() {
 		log.Fatalf("Failed to connect to MongoDB: %v", err)
 	}
 	log.Println("Connected to MongoDB successfully")
+
+	// === PLACE THE INDEX CREATION HERE ===
+	// Use the main application context (ctx) or a dedicated context with appropriate timeout
+	// for the index creation. The main context is fine here as it's long-lived.
+	log.Println("Ensuring MongoDB unique user indexes...")
+	indexCtx, indexCancel := context.WithTimeout(context.Background(), 30*time.Second) // Give it more time if indexes are large
+	defer indexCancel()
+	if err := mongoDB.EnsureUniqueUserIndexes(indexCtx); err != nil {
+		log.Fatalf("Failed to ensure unique user indexes: %v", err)
+	}
+	log.Println("MongoDB unique user indexes ensured successfully.")
+	// ======================================
 
 	msgSvc := domain.NewMongoMessageService(mongoDB.GetDatabase())
 	log.Println("Created MongoDB-backed message service")
@@ -89,8 +107,10 @@ func main() {
 		fmt.Fprintln(w, "OK")
 	})
 	httpMux.HandleFunc("/createUser", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("[/createUser] Received request")
 		// Only allow POST method
 		if r.Method != http.MethodPost {
+			log.Printf("[/createUser] Invalid method: %s", r.Method)
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
@@ -99,13 +119,15 @@ func main() {
 		var req models.CreateUserRequest
 		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&req); err != nil {
-			log.Printf("Error decoding request body: %v", err)
+			log.Printf("[/createUser] Error decoding request body: %v", err)
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
+		log.Printf("[/createUser] Request body: %+v", req)
 
 		// Validate request fields
 		if req.UserQuillMail == "" || req.UserEmail == "" || req.UsersUID == "" {
+			log.Printf("[/createUser] Missing required fields: UserQuillMail=%q, UserEmail=%q, UsersUID=%q", req.UserQuillMail, req.UserEmail, req.UsersUID)
 			http.Error(w, "Missing required fields", http.StatusBadRequest)
 			return
 		}
@@ -119,11 +141,13 @@ func main() {
 			CreatedAt:     now,
 			LastLogin:     now,
 		}
+		log.Printf("[/createUser] Creating user: %+v", user)
 
 		// Insert the user into MongoDB
-		created, err := mongoDB.CreateUserDoc(r.Context(), user)
+		// Use r.Context() for the request-scoped context
+		created, err := mongoDB.CreateUserDoc(r.Context(), user, req.AuthToken, authSvc)
 		if err != nil {
-			log.Printf("Error creating user: %v", err)
+			log.Printf("[/createUser] Error creating user: %v", err)
 			http.Error(w, "Failed to create user", http.StatusInternalServerError)
 			return
 		}
@@ -136,18 +160,22 @@ func main() {
 		if created {
 			resp.Message = "User created successfully"
 			resp.UserID = user.UsersUID
+			log.Printf("[/createUser] User created successfully: UID=%s, Email=%s, QuillMail=%s", user.UsersUID, user.UserEmail, user.UserQuillMail)
 		} else {
-			resp.Message = "User with this email or Quill mail already exists"
+			// This branch is hit if mongo.IsDuplicateKeyError(err) was true in CreateUserDoc
+			resp.Message = "User with this UID, email, or Quill mail already exists"
 			w.WriteHeader(http.StatusConflict) // 409 Conflict
+			log.Printf("[/createUser] User already exists: UID=%s, Email=%s, QuillMail=%s", user.UsersUID, user.UserEmail, user.UserQuillMail)
 		}
 
 		// Send JSON response
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			log.Printf("Error encoding response: %v", err)
+			log.Printf("[/createUser] Error encoding response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 			return
 		}
+		log.Printf("[/createUser] Response sent: %+v", resp)
 	})
 
 	httpServer := &http.Server{
