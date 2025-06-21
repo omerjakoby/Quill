@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"fmt"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -205,7 +206,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	if !(req.MessageID != "") {
 		return DomainSendResult{}, errorString("did not provide message ID")
 	}
-
+	// needs to be indexed for better performance TODO: add index on messageId
 	singleResult := m.db.Collection("messages").FindOne(ctx, bson.M{"messageId": messageID})
 	if err := singleResult.Err(); err != nil {
 		if err != mongo.ErrNoDocuments {
@@ -276,6 +277,21 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	if !ok {
 		return DomainFetchResult{}, ErrUserNotAuthenticated
 	}
+	// get users quillmail domain
+
+	collection := m.db.Collection("users")
+	filter := bson.M{"_id": userID}
+	var result struct {
+		UserQuillMail string `bson:"userQuillMail"`
+	}
+	err := collection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return DomainFetchResult{}, err
+		}
+		return DomainFetchResult{}, fmt.Errorf("error retrieving userQuillMail: %w", err)
+	}
+	quillmail := result.UserQuillMail
 
 	// Set default limit and offset if not provided
 	limit := 10
@@ -289,7 +305,6 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	}
 
 	// Build query based on fetch mode
-	var filter bson.M
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		filter = bson.M{
 			"userId":           userID,
@@ -297,7 +312,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 		}
 	} else if req.Mode == FetchModeFolder && req.Folder != nil {
 		filter = bson.M{
-			"userId": userID,
+			"userId": quillmail,
 			"folder": *req.Folder,
 		}
 	} else {

@@ -45,12 +45,6 @@ func (m *MongoDB) EnsureUniqueUserIndexes(ctx context.Context) error {
 	return nil
 }
 
-// MessageIDExists checks if a message with the given ID already exists in the messages collection.
-//
-// NOTE: If `messageID` is intended to be the primary key (`_id`) for your message documents,
-// consider mapping it to `_id` in your `models.Message` struct and relying on `FindOne` or
-// `InsertOne` with duplicate key error handling for better consistency and performance,
-// similar to how `CreateUserDoc` is now structured.
 func (m *MongoDB) MessageIDExists(ctx context.Context, messageID string) (bool, error) {
 	collection := m.GetMessagesCollection()
 	filter := bson.M{"messageId": messageID}
@@ -117,4 +111,21 @@ func (m *MongoDB) CreateUserDoc(ctx context.Context, user *models.User, authToke
 
 	// If no error, the user document was successfully inserted.
 	return true, nil
+}
+
+// GetQuillMailByUserID retrieves the userQuillMail address for a user by their document ID (UsersUID).
+func (m *MongoDB) GetQuillMailByUserID(ctx context.Context, userID string) (string, error) {
+	collection := m.GetUsersCollection()
+	filter := bson.M{"_id": userID}
+	var result struct {
+		UserQuillMail string `bson:"userQuillMail"`
+	}
+	err := collection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", nil // User not found
+		}
+		return "", fmt.Errorf("error retrieving userQuillMail: %w", err)
+	}
+	return result.UserQuillMail, nil
 }
