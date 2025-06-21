@@ -4,13 +4,19 @@ import (
 	"context"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"quill/cmd/main/constants"
-	"quill/pkg/db"
 	"strings"
 	"time"
 )
+
+// MessageService defines the interface for message-related operations
+type MessageService interface {
+	Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error)
+	Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error)
+}
 
 // MockMessageService implements the MessageService interface with mock data
 
@@ -42,11 +48,11 @@ func (m *MockMessageService) Fetch(ctx context.Context, req DomainFetchRequest) 
 
 // MongoMessageService implements the MessageService interface with MongoDB storage
 type MongoMessageService struct {
-	db *db.MongoDB
+	db *mongo.Database
 }
 
 // NewMongoMessageService creates a new MongoDB-backed MessageService
-func NewMongoMessageService(db *db.MongoDB) *MongoMessageService {
+func NewMongoMessageService(db *mongo.Database) *MongoMessageService {
 	return &MongoMessageService{
 		db: db,
 	}
@@ -119,7 +125,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	}
 
 	// Insert into messages collection
-	if _, err := m.db.GetMessagesCollection().
+	if _, err := m.db.Collection("messages").
 		InsertOne(ctx, messageDoc); err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
@@ -156,7 +162,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	}
 
 	if len(entries) > 0 {
-		if _, err := m.db.GetMailboxesCollection().
+		if _, err := m.db.Collection("mailboxes").
 			InsertMany(ctx, entries); err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
 			// consider rollback of the message?
@@ -200,12 +206,13 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 		return DomainSendResult{}, errorString("did not provide message ID")
 	}
 
-	exists, err := m.db.MessageIDExists(ctx, messageID)
-	if err != nil {
-		log.Printf("failed to check if message exists: %v", err)
-		return DomainSendResult{}, err
-	}
-	if exists {
+	singleResult := m.db.Collection("messages").FindOne(ctx, bson.M{"messageId": messageID})
+	if err := singleResult.Err(); err != nil {
+		if err != mongo.ErrNoDocuments {
+			log.Printf("failed to check if message exists: %v", err)
+			return DomainSendResult{}, err
+		}
+	} else {
 		return DomainSendResult{}, errorString("message with this ID already exists")
 	}
 
@@ -228,7 +235,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}
 
 	// Insert message into messages collection
-	_, err = m.db.GetMessagesCollection().InsertOne(ctx, messageDoc)
+	_, err := m.db.Collection("messages").InsertOne(ctx, messageDoc)
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
@@ -249,7 +256,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}
 	// Insert all mailbox entries
 	if len(mailboxEntries) > 0 {
-		_, err = m.db.GetMailboxesCollection().InsertMany(ctx, mailboxEntries)
+		_, err = m.db.Collection("mailboxes").InsertMany(ctx, mailboxEntries)
 		if err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
 			// Consider handling this error (perhaps delete the message?)
@@ -302,7 +309,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	}
 
 	// Get total count of matching messages
-	total, err := m.db.GetMailboxesCollection().CountDocuments(ctx, filter)
+	total, err := m.db.Collection("mailboxes").CountDocuments(ctx, filter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
@@ -313,7 +320,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit))
 
-	cursor, err := m.db.GetMailboxesCollection().Find(ctx, filter, findOptions)
+	cursor, err := m.db.Collection("mailboxes").Find(ctx, filter, findOptions)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
@@ -347,7 +354,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 
 	// Fetch the actual messages
 	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
-	messageCursor, err := m.db.GetMessagesCollection().Find(ctx, messageFilter)
+	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
