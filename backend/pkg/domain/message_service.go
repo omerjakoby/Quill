@@ -2,15 +2,23 @@ package domain
 
 import (
 	"context"
+	"fmt"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"quill/cmd/main/constants"
-	"quill/pkg/db"
 	"strings"
 	"time"
 )
+
+// MessageService defines the interface for message-related operations
+type MessageService interface {
+	Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error)
+	Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error)
+}
 
 // MockMessageService implements the MessageService interface with mock data
 
@@ -42,11 +50,11 @@ func (m *MockMessageService) Fetch(ctx context.Context, req DomainFetchRequest) 
 
 // MongoMessageService implements the MessageService interface with MongoDB storage
 type MongoMessageService struct {
-	db *db.MongoDB
+	db *mongo.Database
 }
 
 // NewMongoMessageService creates a new MongoDB-backed MessageService
-func NewMongoMessageService(db *db.MongoDB) *MongoMessageService {
+func NewMongoMessageService(db *mongo.Database) *MongoMessageService {
 	return &MongoMessageService{
 		db: db,
 	}
@@ -119,7 +127,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	}
 
 	// Insert into messages collection
-	if _, err := m.db.GetMessagesCollection().
+	if _, err := m.db.Collection("messages").
 		InsertOne(ctx, messageDoc); err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
@@ -156,7 +164,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	}
 
 	if len(entries) > 0 {
-		if _, err := m.db.GetMailboxesCollection().
+		if _, err := m.db.Collection("mailboxes").
 			InsertMany(ctx, entries); err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
 			// consider rollback of the message?
@@ -199,13 +207,14 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	if !(req.MessageID != "") {
 		return DomainSendResult{}, errorString("did not provide message ID")
 	}
-
-	exists, err := m.db.MessageIDExists(ctx, messageID)
-	if err != nil {
-		log.Printf("failed to check if message exists: %v", err)
-		return DomainSendResult{}, err
-	}
-	if exists {
+	// needs to be indexed for better performance TODO: add index on messageId
+	singleResult := m.db.Collection("messages").FindOne(ctx, bson.M{"messageId": messageID})
+	if err := singleResult.Err(); err != nil {
+		if err != mongo.ErrNoDocuments {
+			log.Printf("failed to check if message exists: %v", err)
+			return DomainSendResult{}, err
+		}
+	} else {
 		return DomainSendResult{}, errorString("message with this ID already exists")
 	}
 
@@ -228,7 +237,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}
 
 	// Insert message into messages collection
-	_, err = m.db.GetMessagesCollection().InsertOne(ctx, messageDoc)
+	_, err := m.db.Collection("messages").InsertOne(ctx, messageDoc)
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
@@ -249,7 +258,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}
 	// Insert all mailbox entries
 	if len(mailboxEntries) > 0 {
-		_, err = m.db.GetMailboxesCollection().InsertMany(ctx, mailboxEntries)
+		_, err = m.db.Collection("mailboxes").InsertMany(ctx, mailboxEntries)
 		if err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
 			// Consider handling this error (perhaps delete the message?)
@@ -269,6 +278,21 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	if !ok {
 		return DomainFetchResult{}, ErrUserNotAuthenticated
 	}
+	// get users quillmail domain
+
+	collection := m.db.Collection("users")
+	filter := bson.M{"_id": userID}
+	var result struct {
+		UserQuillMail string `bson:"userQuillMail"`
+	}
+	err := collection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return DomainFetchResult{}, err
+		}
+		return DomainFetchResult{}, fmt.Errorf("error retrieving userQuillMail: %w", err)
+	}
+	quillmail := result.UserQuillMail
 
 	// Set default limit and offset if not provided
 	limit := 10
@@ -282,15 +306,14 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	}
 
 	// Build query based on fetch mode
-	var filter bson.M
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		filter = bson.M{
-			"userId":   userID,
-			"threadId": *req.ThreadID,
+			"userId":           userID,
+			"options.threadID": *req.ThreadID,
 		}
 	} else if req.Mode == FetchModeFolder && req.Folder != nil {
 		filter = bson.M{
-			"userId": userID,
+			"userId": quillmail,
 			"folder": *req.Folder,
 		}
 	} else {
@@ -302,7 +325,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	}
 
 	// Get total count of matching messages
-	total, err := m.db.GetMailboxesCollection().CountDocuments(ctx, filter)
+	total, err := m.db.Collection("mailboxes").CountDocuments(ctx, filter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
@@ -313,7 +336,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 		SetSkip(int64(offset)).
 		SetLimit(int64(limit))
 
-	cursor, err := m.db.GetMailboxesCollection().Find(ctx, filter, findOptions)
+	cursor, err := m.db.Collection("mailboxes").Find(ctx, filter, findOptions)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
@@ -347,7 +370,7 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 
 	// Fetch the actual messages
 	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
-	messageCursor, err := m.db.GetMessagesCollection().Find(ctx, messageFilter)
+	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
@@ -390,34 +413,29 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 // Helper function to convert BSON to Message domain object
 func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	// This is a simplified conversion - in a real implementation you'd need to handle all fields properly
+	thredid := bsonMsg["options"].(bson.M)["threadID"].(string)
 	msg := Message{
 		MessageID: bsonMsg["messageId"].(string),
-		ThreadID:  bsonMsg["threadId"].(string),
-		From:      bsonMsg["from"].(string),
+		ThreadID:  thredid,
+		From:      bsonMsg["fromID"].(string),
 		Read:      read,
 	}
 
 	// Handle array fields
-	if to, ok := bsonMsg["to"].([]interface{}); ok {
-		for _, t := range to {
+	if pArr, ok := bsonMsg["to"].(primitive.A); ok {
+		// pArr is now of type primitive.A, which behaves exactly like []interface{}
+		// for iteration purposes.
+		for _, t := range pArr {
 			if str, ok := t.(string); ok {
 				msg.To = append(msg.To, str)
 			}
 		}
 	}
 
-	if cc, ok := bsonMsg["cc"].([]interface{}); ok {
+	if cc, ok := bsonMsg["cc"].(primitive.A); ok {
 		for _, c := range cc {
 			if str, ok := c.(string); ok {
 				msg.CC = append(msg.CC, str)
-			}
-		}
-	}
-
-	if bcc, ok := bsonMsg["bcc"].([]interface{}); ok {
-		for _, b := range bcc {
-			if str, ok := b.(string); ok {
-				msg.BCC = append(msg.BCC, str)
 			}
 		}
 	}
@@ -428,12 +446,27 @@ func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	}
 
 	// Handle sentAt
-	if sentAt, ok := bsonMsg["sentAt"].(time.Time); ok {
-		msg.SentAt = sentAt
+	if sentAtDT, ok := bsonMsg["sentAt"].(primitive.DateTime); ok {
+		msg.SentAt = sentAtDT.Time()
 	}
 
-	// Other fields would be converted similarly
-	// This is simplified for brevity
+	// Handle body
+	if body, ok := bsonMsg["body"].(bson.M); ok {
+		if contentArr, ok := body["content"].(primitive.A); ok {
+			for _, c := range contentArr {
+				if contentMap, ok := c.(bson.M); ok {
+					var contentItem Content
+					if t, ok := contentMap["type"].(ContentType); ok {
+						contentItem.Type = t
+					}
+					if v, ok := contentMap["value"].(string); ok {
+						contentItem.Value = v
+					}
+					msg.Body.Content = append(msg.Body.Content, contentItem)
+				}
+			}
+		}
+	}
 
 	return msg
 }

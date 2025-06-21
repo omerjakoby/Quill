@@ -22,6 +22,7 @@ type MongoDB struct {
 	database  *mongo.Database
 	messages  *mongo.Collection
 	mailboxes *mongo.Collection
+	users     *mongo.Collection
 	config    MongoConfig
 }
 
@@ -52,7 +53,8 @@ func NewMongoDB(config MongoConfig) (*MongoDB, error) {
 		client:    client,
 		database:  db,
 		messages:  db.Collection("messages"),
-		mailboxes: db.Collection("user_mailbox_entries"),
+		mailboxes: db.Collection("mailboxes"),
+		users:     db.Collection("users"),
 		config:    config,
 	}, nil
 }
@@ -70,4 +72,14 @@ func (m *MongoDB) GetMessagesCollection() *mongo.Collection {
 // GetMailboxesCollection returns the user mailboxes collection
 func (m *MongoDB) GetMailboxesCollection() *mongo.Collection {
 	return m.mailboxes
+}
+
+// GetUsersCollection returns the users collection
+func (m *MongoDB) GetUsersCollection() *mongo.Collection {
+	return m.users
+}
+
+// GetDatabase returns the underlying MongoDB database
+func (m *MongoDB) GetDatabase() *mongo.Database {
+	return m.database
 }
