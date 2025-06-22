@@ -1,0 +1,14 @@
+{
+  "type": "HANDSHAKE_ACK",
+  "timestamp": "2025-06-22T17:00:01Z",
+  "accepted": true,
+  "required_anti_spam": {
+    "SEND_MESSAGE_INIT": { "type": "hashcash", "bits": 22 },
+    "FETCH_KEYS": { "type": "none" }
+  },
+  "capabilities": {
+    "encryption": false,
+    "max_chunk_size": 65536
+  },
+  "version": "1.0"
+}

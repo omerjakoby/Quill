@@ -1,0 +1,8 @@
+{
+  "type": "ERROR",
+  "timestamp": "2025-06-22T17:00:01Z",
+  "code": "UNSUPPORTED_VERSION",
+  "message": "Quill protocol version 2.0 is not supported.",
+  "context": "HANDSHAKE",
+  "temporary": false
+}
