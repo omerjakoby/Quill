@@ -39,9 +39,9 @@ All packets follow a unified schema:
 {
   "type": "PACKET_TYPE",
   "timestamp": "2025-06-22T17:00:00Z",
-  "payload": { /* packet-specific fields */ },
+  "payload": {  packet-specific fields  },
   "signature": "<base64(sig)>",
-  "anti_spam": { /* optional, e.g. PoW or token */ }
+  "anti_spam": {  optional, e.g. PoW or token  }
 }
 ```
 
