@@ -127,7 +127,7 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 	result, err := h.messageSvc.Send(ctx, domainReq)
 	if err != nil {
 		log.Printf("ERROR: service call to Send failed: %v", err)
-		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to send the message.")
+		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to send messages: "+err.Error())
 		return
 	}
 
@@ -279,7 +279,7 @@ func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload
 	result, err := h.messageSvc.Fetch(ctx, domainReq)
 	if err != nil {
 		log.Printf("ERROR: service call to Fetch failed: %v", err)
-		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to fetch messages.")
+		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to fetch messages: "+err.Error())
 		return
 	}
 

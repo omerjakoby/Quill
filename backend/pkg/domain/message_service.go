@@ -72,13 +72,26 @@ type mailboxEntry struct {
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
 func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-	if extractDomain(req.From) == constants.DOMAIN_NAME {
-		return m.SendInternal(ctx, req)
+	// Validate the request
+	if validateQuillMailFormat(req.From) {
+		if extractDomain(req.From) == constants.DOMAIN_NAME {
+			return m.SendInternal(ctx, req)
+		}
+		return m.SendExternal(ctx, req)
 	}
-	return m.SendExternal(ctx, req)
+	return DomainSendResult{}, errorString("invalid sender address format")
+
 }
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+
+	// Validate recipient address format
+	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
+		if !validateQuillMailFormat(addr) {
+			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+		}
+	}
+
 	messageID, err := getOrValidateMessageID(req.MessageID)
 	if err != nil {
 		return DomainSendResult{}, err
@@ -154,6 +167,12 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	messageID, err := validateMessageID(req.MessageID)
 	if err != nil {
 		return DomainSendResult{}, err
+	}
+
+	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
+		if !validateQuillMailFormat(addr) {
+			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+		}
 	}
 
 	// Check for existing message
@@ -275,6 +294,177 @@ func createMailboxEntries(recipients []string, messageID, threadID string, now t
 
 // Fetch retrieves messages based on the provided request
 func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeFolder && req.Folder == nil) {
+		return DomainFetchResult{}, errorString("missing required parameters for fetch mode")
+	} else if req.Mode != FetchModeThread && req.Mode != FetchModeFolder {
+		return DomainFetchResult{}, errorString("invalid fetch mode")
+	} else if req.Mode == FetchModeFolder {
+		return m.FetchFolder(ctx, req)
+	} else if req.Mode == FetchModeThread {
+		return m.FetchThread(ctx, req)
+	}
+	return DomainFetchResult{}, errorString("unsupported fetch mode")
+}
+
+func (m *MongoMessageService) FetchThread(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+	userID, ok := ctx.Value("userID").(string)
+	if !ok {
+		return DomainFetchResult{}, ErrUserNotAuthenticated
+	}
+
+	if req.ThreadID == nil {
+		return DomainFetchResult{}, errorString("thread ID is required for thread mode")
+	}
+
+	quillmail, err := m.getUserQuillMail(ctx, userID)
+	if err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	limit := 10
+	if req.Limit != nil {
+		limit = *req.Limit
+	}
+	offset := 0
+	if req.Offset != nil {
+		offset = *req.Offset
+	}
+
+	// Check if the user has access to the thread
+	if err := m.checkThreadAccess(ctx, req, userID, quillmail); err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	// Get all messages in the thread
+	rawMessages, total, err := m.fetchThreadMessages(ctx, *req.ThreadID, offset, limit)
+	if err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	if len(rawMessages) == 0 {
+		return DomainFetchResult{
+			Total:    int(total),
+			Limit:    limit,
+			Offset:   offset,
+			Messages: []Message{},
+		}, nil
+	}
+
+	messageIDs := extractMessageIDsFromRaw(rawMessages)
+	readStatusMap, err := m.fetchReadStatusMap(ctx, quillmail, messageIDs)
+	if err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	messages := mapRawMessagesToDomain(rawMessages, readStatusMap)
+
+	return DomainFetchResult{
+		Total:    int(total),
+		Limit:    limit,
+		Offset:   offset,
+		Messages: messages,
+	}, nil
+}
+
+// Helper: Check if user has access to the thread
+func (m *MongoMessageService) checkThreadAccess(ctx context.Context, req DomainFetchRequest, userID, quillmail string) error {
+	mailboxFilter := buildMailboxFilter(req, userID, quillmail)
+	count, err := m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		// Also check with the quillmail address
+		mailboxFilter = bson.M{
+			"userId":   quillmail,
+			"threadID": *req.ThreadID,
+		}
+		count, err = m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return errorString("thread not found or access denied")
+		}
+	}
+	return nil
+}
+
+// Helper: Fetch messages in the thread with pagination
+func (m *MongoMessageService) fetchThreadMessages(ctx context.Context, threadID string, offset, limit int) ([]bson.M, int64, error) {
+	messageFilter := bson.M{
+		"options.threadID": threadID,
+	}
+	total, err := m.db.Collection("messages").CountDocuments(ctx, messageFilter)
+	if err != nil {
+		return nil, 0, err
+	}
+	findOptions := options.Find().
+		SetSort(bson.D{{Key: "sentAt", Value: -1}}).
+		SetSkip(int64(offset)).
+		SetLimit(int64(limit))
+	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter, findOptions)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() {
+		_ = messageCursor.Close(ctx)
+	}()
+	var rawMessages []bson.M
+	if err = messageCursor.All(ctx, &rawMessages); err != nil {
+		return nil, 0, err
+	}
+	return rawMessages, total, nil
+}
+
+// Helper: Extract message IDs from raw messages
+func extractMessageIDsFromRaw(rawMessages []bson.M) []string {
+	var messageIDs []string
+	for _, msg := range rawMessages {
+		if msgID, ok := msg["messageId"].(string); ok {
+			messageIDs = append(messageIDs, msgID)
+		}
+	}
+	return messageIDs
+}
+
+// Helper: Fetch read status map for messages
+func (m *MongoMessageService) fetchReadStatusMap(ctx context.Context, quillmail string, messageIDs []string) (map[string]bool, error) {
+	readStatusFilter := bson.M{
+		"userId":    quillmail,
+		"messageId": bson.M{"$in": messageIDs},
+	}
+	readStatusCursor, err := m.db.Collection("mailboxes").Find(ctx, readStatusFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = readStatusCursor.Close(ctx)
+	}()
+	readStatusMap := make(map[string]bool)
+	var mailboxEntries []mailboxEntry
+	if err = readStatusCursor.All(ctx, &mailboxEntries); err != nil {
+		return nil, err
+	}
+	for _, entry := range mailboxEntries {
+		readStatusMap[entry.MessageID] = entry.Read
+	}
+	return readStatusMap, nil
+}
+
+// Helper: Map raw messages to domain messages with read status
+func mapRawMessagesToDomain(rawMessages []bson.M, readStatusMap map[string]bool) []Message {
+	var messages []Message
+	for _, rawMsg := range rawMessages {
+		msgID, _ := rawMsg["messageId"].(string)
+		read := readStatusMap[msgID] // false if not found in map
+		message := convertBsonToMessage(rawMsg, read)
+		messages = append(messages, message)
+	}
+	return messages
+}
+
+func (m *MongoMessageService) FetchFolder(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
 	userID, ok := ctx.Value("userID").(string)
 	if !ok {
 		return DomainFetchResult{}, ErrUserNotAuthenticated
@@ -348,8 +538,8 @@ func (m *MongoMessageService) getUserQuillMail(ctx context.Context, userID strin
 func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M {
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		return bson.M{
-			"userId":           userID,
-			"options.threadID": *req.ThreadID,
+			"userId":   quillmail,
+			"threadId": *req.ThreadID,
 		}
 	} else if req.Mode == FetchModeFolder && req.Folder != nil {
 		return bson.M{
@@ -456,8 +646,8 @@ func getStringFromBson(bsonMsg bson.M, key string) string {
 }
 
 func getThreadIDFromBson(bsonMsg bson.M) string {
-	if options, ok := bsonMsg["options"].(bson.M); ok {
-		if threadID, ok := options["threadID"].(string); ok {
+	if opts, ok := bsonMsg["options"].(bson.M); ok {
+		if threadID, ok := opts["threadID"].(string); ok {
 			return threadID
 		}
 	}
@@ -509,8 +699,8 @@ func parseContentItem(c interface{}) *Content {
 		return nil
 	}
 	var contentItem Content
-	if t, ok := contentMap["type"].(ContentType); ok {
-		contentItem.Type = t
+	if t, ok := contentMap["type"].(string); ok {
+		contentItem.Type = ContentType(t)
 	}
 	if v, ok := contentMap["value"].(string); ok {
 		contentItem.Value = v
@@ -580,4 +770,15 @@ func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID str
 		}
 	}
 	return
+}
+
+// validateQuillMailFormat checks if the input matches the format (username)~(mail.com)
+func validateQuillMailFormat(input string) bool {
+	parts := strings.Split(input, "~")
+	if len(parts) != 2 {
+		return false
+	}
+	username := parts[0]
+	domain := parts[1]
+	return username != "" && domain != "" && strings.Contains(domain, ".")
 }
