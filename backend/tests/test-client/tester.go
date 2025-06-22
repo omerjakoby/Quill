@@ -28,10 +28,7 @@ type Packet struct {
 
 func main() {
 	// Hardcoded JSON directory relative to this file's location
-	jsonDir := os.Getenv("JSON_DIR")
-	if jsonDir == "" {
-		jsonDir = filepath.Join("..", "..", "tests", "Quill_Protocol_JSON", "Requests", "fetch")
-	}
+	jsonDir := "C:\\Users\\assij\\GolandProjects\\Quill\\backend\\tests\\Quill_Protocol_JSON\\Requests\\send"
 
 	// Prompt for Firebase token each run
 	reader := bufio.NewReader(os.Stdin)

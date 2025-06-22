@@ -41,7 +41,9 @@ func (h *MessageHandler) Handle(conn net.Conn) {
 	defer func(conn net.Conn) {
 		err := conn.Close()
 		if err != nil {
-
+			log.Printf("ERROR: failed to close connection %s: %v", conn.RemoteAddr(), err)
+		} else {
+			log.Printf("INFO: connection closed: %s", conn.RemoteAddr())
 		}
 	}(conn)
 	log.Printf("INFO: new client connected: %s", conn.RemoteAddr())
@@ -102,47 +104,15 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 		return
 	}
 
-	// 1) DTO → Domain: map and validate content parts
-	contents := make([]domain.Content, 0, len(req.Body.Content))
-	for _, cp := range req.Body.Content {
-		ct := domain.ContentType(cp.Type)
-		switch ct {
-		case domain.ContentTypePlainText, domain.ContentTypeHTML:
-			// valid
-		default:
-			h.writeErrorResponse(conn, ErrorCodeInvalidContentType, fmt.Sprintf("Invalid content type %q; must be %q or %q", cp.Type, domain.ContentTypePlainText, domain.ContentTypeHTML))
-			return
-		}
-		contents = append(contents, domain.Content{Type: ct, Value: cp.Value})
+	contents, err := mapAndValidateContents(req.Body.Content, conn, h)
+	if err != nil {
+		return
 	}
 
-	// 2) Map attachments
-	atts := make([]domain.Attachment, 0, len(req.Attachments))
-	for _, a := range req.Attachments {
-		atts = append(atts, domain.Attachment{
-			Filename: a.Filename,
-			Mimetype: a.Mimetype,
-			URL:      a.ContentBase64,
-		})
-	}
+	atts := mapAttachments(req.Attachments)
 
-	// 3) Optional fields → pointers
-	var expiresPtr *int
-	if req.Options.ExpiresInSeconds > 0 {
-		expiresPtr = &req.Options.ExpiresInSeconds
-	}
+	expiresPtr, oneTimePtr, threadIDPtr := mapOptionalFields(req.Options)
 
-	var oneTimePtr *bool
-	if req.Options.OneTime {
-		oneTimePtr = &req.Options.OneTime
-	}
-
-	var threadIDPtr *string
-	if req.Options.ThreadID != "" {
-		threadIDPtr = &req.Options.ThreadID
-	}
-
-	// 4) Build domain request
 	domainReq := domain.DomainSendRequest{
 		From:        req.From,
 		To:          req.To,
@@ -154,47 +124,15 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 		Options:     domain.SendOptions{ExpiresInSeconds: expiresPtr, OneTime: oneTimePtr, ThreadID: threadIDPtr},
 	}
 
-	// 5) Call service
 	result, err := h.messageSvc.Send(ctx, domainReq)
 	if err != nil {
 		log.Printf("ERROR: service call to Send failed: %v", err)
 		h.writeErrorResponse(conn, ErrorCodeServiceError, "Failed to send the message.")
 		return
 	}
-	// 6) send packet to non Quill users
-	if len(result.QueuedFor) > 0 {
-		sendReq := SendPayload{
-			MessageID:   result.MessageID,
-			From:        req.From,
-			To:          req.To,
-			CC:          req.CC,
-			BCC:         req.BCC,
-			Subject:     req.Subject,
-			Body:        req.Body,
-			Attachments: req.Attachments,
-			Options: SendOptions{
-				ExpiresInSeconds: req.Options.ExpiresInSeconds,
-				OneTime:          req.Options.OneTime,
-				ThreadID:         result.ThreadID,
-			},
-		}
-		for _, addr := range result.QueuedFor {
-			if addr == "" {
-				continue // skip empty addresses
-			}
-			addr = extractDomain(addr)
-			sendResult, err := sendQuillMessage(addr, sendReq)
-			if err != nil {
-				log.Printf("ERROR: failed to send message to %s: %v", addr, err)
-				h.writeErrorResponse(conn, ErrorCodeDeliveryFailed, fmt.Sprintf("Failed to queue message for %s: %v", addr, err))
-				continue
-			}
-			log.Printf("INFO: queued message %s for external delivery to %s", sendResult, addr)
 
-			log.Printf("INFO: Queued message %s for external delivery to %s", result.MessageID, addr)
-		}
-	}
-	// 7) Construct and send response
+	h.handleExternalDelivery(result, req, conn)
+
 	resp := SendResponsePayload{
 		Status:      StatusOK,
 		MessageID:   result.MessageID,
@@ -203,6 +141,90 @@ func (h *MessageHandler) handleSend(ctx context.Context, conn net.Conn, payload 
 		QueuedFor:   result.QueuedFor,
 	}
 	h.writeResponse(conn, PacketTypeSendResponse, resp)
+}
+
+func mapAndValidateContents(contentParts []ContentPart, conn net.Conn, h *MessageHandler) ([]domain.Content, error) {
+	contents := make([]domain.Content, 0, len(contentParts))
+	for _, cp := range contentParts {
+		ct := domain.ContentType(cp.Type)
+		switch ct {
+		case domain.ContentTypePlainText, domain.ContentTypeHTML:
+			// valid
+		default:
+			h.writeErrorResponse(conn, ErrorCodeInvalidContentType, fmt.Sprintf("Invalid content type %q; must be %q or %q", cp.Type, domain.ContentTypePlainText, domain.ContentTypeHTML))
+			return nil, fmt.Errorf("invalid content type")
+		}
+		contents = append(contents, domain.Content{Type: ct, Value: cp.Value})
+	}
+	return contents, nil
+}
+
+func mapAttachments(attachments []Attachment) []domain.Attachment {
+	atts := make([]domain.Attachment, 0, len(attachments))
+	for _, a := range attachments {
+		atts = append(atts, domain.Attachment{
+			Filename: a.Filename,
+			Mimetype: a.Mimetype,
+			URL:      a.ContentBase64,
+		})
+	}
+	return atts
+}
+
+func mapOptionalFields(options SendOptions) (*int, *bool, *string) {
+	var expiresPtr *int
+	if options.ExpiresInSeconds > 0 {
+		expiresPtr = &options.ExpiresInSeconds
+	}
+
+	var oneTimePtr *bool
+	if options.OneTime {
+		oneTimePtr = &options.OneTime
+	}
+
+	var threadIDPtr *string
+	if options.ThreadID != "" {
+		threadIDPtr = &options.ThreadID
+	}
+
+	return expiresPtr, oneTimePtr, threadIDPtr
+}
+
+func (h *MessageHandler) handleExternalDelivery(result domain.DomainSendResult, req SendPayload, conn net.Conn) {
+	if len(result.QueuedFor) == 0 {
+		return
+	}
+
+	sendReq := SendPayload{
+		MessageID:   result.MessageID,
+		From:        req.From,
+		To:          req.To,
+		CC:          req.CC,
+		BCC:         req.BCC,
+		Subject:     req.Subject,
+		Body:        req.Body,
+		Attachments: req.Attachments,
+		Options: SendOptions{
+			ExpiresInSeconds: req.Options.ExpiresInSeconds,
+			OneTime:          req.Options.OneTime,
+			ThreadID:         result.ThreadID,
+		},
+	}
+	for _, addr := range result.QueuedFor {
+		if addr == "" {
+			continue // skip empty addresses
+		}
+		addr = extractDomain(addr)
+		sendResult, err := sendQuillMessage(addr, sendReq)
+		if err != nil {
+			log.Printf("ERROR: failed to send message to %s: %v", addr, err)
+			h.writeErrorResponse(conn, ErrorCodeDeliveryFailed, fmt.Sprintf("Failed to queue message for %s: %v", addr, err))
+			continue
+		}
+		log.Printf("INFO: queued message %s for external delivery to %s", sendResult, addr)
+
+		log.Printf("INFO: Queued message %s for external delivery to %s", result.MessageID, addr)
+	}
 }
 
 func (h *MessageHandler) handleFetch(ctx context.Context, conn net.Conn, payload json.RawMessage) {
@@ -393,7 +415,9 @@ func sendAndReceiveTLS(addr string, pkt *Packet) (*Packet, error) {
 	defer func(conn *tls.Conn) {
 		err := conn.Close()
 		if err != nil {
-
+			log.Printf("ERROR: failed to close TLS connection %s: %v", conn.RemoteAddr(), err)
+		} else {
+			log.Printf("INFO: TLS connection closed: %s", conn.RemoteAddr())
 		}
 	}(conn)
 
