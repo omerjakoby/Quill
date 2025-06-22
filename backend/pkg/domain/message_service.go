@@ -79,35 +79,19 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 }
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-	// 1. Validate or generate messageID
-	var messageID string
-	if req.MessageID != "" {
-		if !isUUID(req.MessageID) {
-			return DomainSendResult{},
-				errorString("invalid message ID: must be a UUID")
-		}
-		messageID = req.MessageID
-	} else {
-		messageID = uuid.New().String()
+	messageID, err := getOrValidateMessageID(req.MessageID)
+	if err != nil {
+		return DomainSendResult{}, err
 	}
 
-	// 2. Validate or generate threadID
-	var threadID string
-	if req.Options.ThreadID != nil && *req.Options.ThreadID != "" {
-		if !isUUID(*req.Options.ThreadID) {
-			return DomainSendResult{},
-				errorString("invalid thread ID: must be a UUID")
-		}
-		threadID = *req.Options.ThreadID
-	} else {
-		threadID = uuid.New().String()
+	threadID, err := getOrValidateThreadID(req.Options.ThreadID)
+	if err != nil {
+		return DomainSendResult{}, err
 	}
 
-	// From is always within our domain here
 	userID := req.From
 	now := time.Now().UTC()
 
-	// Prepare the message document
 	messageDoc := bson.M{
 		"messageId":   messageID,
 		"fromID":      userID,
@@ -126,14 +110,11 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 		},
 	}
 
-	// Insert into messages collection
-	if _, err := m.db.Collection("messages").
-		InsertOne(ctx, messageDoc); err != nil {
+	if _, err := m.db.Collection("messages").InsertOne(ctx, messageDoc); err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
 	}
 
-	// Build mailbox entries
 	entries := []interface{}{
 		mailboxEntry{
 			UserID:     userID,
@@ -146,26 +127,11 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	}
 
 	allRecipients := append(append(req.To, req.CC...), req.BCC...)
-	var internal, external []string
-	for _, addr := range allRecipients {
-		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
-			internal = append(internal, addr)
-			entries = append(entries, mailboxEntry{
-				UserID:     addr,
-				MessageID:  messageID,
-				ThreadID:   threadID,
-				Folder:     "inbox",
-				Read:       false,
-				ReceivedAt: now,
-			})
-		} else {
-			external = append(external, addr)
-		}
-	}
+	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, now)
+	entries = append(entries, newEntries...)
 
 	if len(entries) > 0 {
-		if _, err := m.db.Collection("mailboxes").
-			InsertMany(ctx, entries); err != nil {
+		if _, err := m.db.Collection("mailboxes").InsertMany(ctx, entries); err != nil {
 			log.Printf("Failed to insert mailbox entries: %v", err)
 			// consider rollback of the message?
 		}
@@ -180,41 +146,22 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 }
 
 func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-
-	// Generate new message ID and thread ID if not provided
-	myRecipients := []string{}
-	for _, addr := range req.To {
-		if extractDomain(addr) == constants.DOMAIN_NAME {
-			myRecipients = append(myRecipients, addr)
-		}
+	// Validate and extract threadID and messageID
+	threadID, err := validateThreadID(req.Options.ThreadID)
+	if err != nil {
+		return DomainSendResult{}, err
 	}
-	for _, addr := range req.CC {
-		if extractDomain(addr) == constants.DOMAIN_NAME {
-			myRecipients = append(myRecipients, addr)
-		}
-	}
-	for _, addr := range req.BCC {
-		if extractDomain(addr) == constants.DOMAIN_NAME {
-			myRecipients = append(myRecipients, addr)
-		}
+	messageID, err := validateMessageID(req.MessageID)
+	if err != nil {
+		return DomainSendResult{}, err
 	}
 
-	threadID := *req.Options.ThreadID
-	if !(req.Options.ThreadID != nil && *req.Options.ThreadID != "") || isUUID(*req.Options.ThreadID) == false {
-		return DomainSendResult{}, errorString("did not provide thread ID")
+	// Check for existing message
+	exists, err := m.messageExists(ctx, messageID)
+	if err != nil {
+		return DomainSendResult{}, err
 	}
-	messageID := req.MessageID
-	if !(req.MessageID != "") {
-		return DomainSendResult{}, errorString("did not provide message ID")
-	}
-	// needs to be indexed for better performance TODO: add index on messageId
-	singleResult := m.db.Collection("messages").FindOne(ctx, bson.M{"messageId": messageID})
-	if err := singleResult.Err(); err != nil {
-		if err != mongo.ErrNoDocuments {
-			log.Printf("failed to check if message exists: %v", err)
-			return DomainSendResult{}, err
-		}
-	} else {
+	if exists {
 		return DomainSendResult{}, errorString("message with this ID already exists")
 	}
 
@@ -237,26 +184,15 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}
 
 	// Insert message into messages collection
-	_, err := m.db.Collection("messages").InsertOne(ctx, messageDoc)
+	_, err = m.db.Collection("messages").InsertOne(ctx, messageDoc)
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
 		return DomainSendResult{}, err
 	}
 
-	// Create mailbox entries for all recipients (including sender's sent folder)
-	var mailboxEntries []interface{}
-
-	for _, recipient := range myRecipients {
-		mailboxEntries = append(mailboxEntries, mailboxEntry{
-			UserID:     recipient,
-			MessageID:  messageID,
-			ThreadID:   threadID,
-			Folder:     "inbox",
-			Read:       false,
-			ReceivedAt: now,
-		})
-	}
-	// Insert all mailbox entries
+	// Create mailbox entries for all internal recipients
+	myRecipients := getInternalRecipients(req, constants.DOMAIN_NAME)
+	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, now)
 	if len(mailboxEntries) > 0 {
 		_, err = m.db.Collection("mailboxes").InsertMany(ctx, mailboxEntries)
 		if err != nil {
@@ -271,89 +207,104 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	}, nil
 }
 
+// Helper to validate threadID
+func validateThreadID(threadIDPtr *string) (string, error) {
+	if threadIDPtr == nil || *threadIDPtr == "" || !isUUID(*threadIDPtr) {
+		return "", errorString("did not provide thread ID")
+	}
+	return *threadIDPtr, nil
+}
+
+// Helper to validate messageID
+func validateMessageID(messageID string) (string, error) {
+	if messageID == "" {
+		return "", errorString("did not provide message ID")
+	}
+	return messageID, nil
+}
+
+// Helper to check if a message exists
+func (m *MongoMessageService) messageExists(ctx context.Context, messageID string) (bool, error) {
+	singleResult := m.db.Collection("messages").FindOne(ctx, bson.M{"messageId": messageID})
+	if err := singleResult.Err(); err != nil {
+		if err != mongo.ErrNoDocuments {
+			log.Printf("failed to check if message exists: %v", err)
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
+}
+
+// Helper to get internal recipients
+func getInternalRecipients(req DomainSendRequest, domain string) []string {
+	var recipients []string
+	for _, addr := range req.To {
+		if extractDomain(addr) == domain {
+			recipients = append(recipients, addr)
+		}
+	}
+	for _, addr := range req.CC {
+		if extractDomain(addr) == domain {
+			recipients = append(recipients, addr)
+		}
+	}
+	for _, addr := range req.BCC {
+		if extractDomain(addr) == domain {
+			recipients = append(recipients, addr)
+		}
+	}
+	return recipients
+}
+
+// Helper to create mailbox entries
+func createMailboxEntries(recipients []string, messageID, threadID string, now time.Time) []interface{} {
+	var entries []interface{}
+	for _, recipient := range recipients {
+		entries = append(entries, mailboxEntry{
+			UserID:     recipient,
+			MessageID:  messageID,
+			ThreadID:   threadID,
+			Folder:     "inbox",
+			Read:       false,
+			ReceivedAt: now,
+		})
+	}
+	return entries
+}
+
 // Fetch retrieves messages based on the provided request
 func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
-	// Extract user ID from context
 	userID, ok := ctx.Value("userID").(string)
 	if !ok {
 		return DomainFetchResult{}, ErrUserNotAuthenticated
 	}
-	// get users quillmail domain
 
-	collection := m.db.Collection("users")
-	filter := bson.M{"_id": userID}
-	var result struct {
-		UserQuillMail string `bson:"userQuillMail"`
-	}
-	err := collection.FindOne(ctx, filter).Decode(&result)
+	quillmail, err := m.getUserQuillMail(ctx, userID)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return DomainFetchResult{}, err
-		}
-		return DomainFetchResult{}, fmt.Errorf("error retrieving userQuillMail: %w", err)
+		return DomainFetchResult{}, err
 	}
-	quillmail := result.UserQuillMail
 
-	// Set default limit and offset if not provided
 	limit := 10
 	if req.Limit != nil {
 		limit = *req.Limit
 	}
-
 	offset := 0
 	if req.Offset != nil {
 		offset = *req.Offset
 	}
 
-	// Build query based on fetch mode
-	if req.Mode == FetchModeThread && req.ThreadID != nil {
-		filter = bson.M{
-			"userId":           userID,
-			"options.threadID": *req.ThreadID,
-		}
-	} else if req.Mode == FetchModeFolder && req.Folder != nil {
-		filter = bson.M{
-			"userId": quillmail,
-			"folder": *req.Folder,
-		}
-	} else {
-		// Default to inbox if no valid mode/parameters provided
-		filter = bson.M{
-			"userId": userID,
-			"folder": "inbox",
-		}
-	}
-
-	// Get total count of matching messages
+	filter := buildMailboxFilter(req, userID, quillmail)
 	total, err := m.db.Collection("mailboxes").CountDocuments(ctx, filter)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
 
-	// Find mailbox entries
-	findOptions := options.Find().
-		SetSort(bson.D{{Key: "receivedAt", Value: -1}}).
-		SetSkip(int64(offset)).
-		SetLimit(int64(limit))
-
-	cursor, err := m.db.Collection("mailboxes").Find(ctx, filter, findOptions)
+	entries, err := m.fetchMailboxEntries(ctx, filter, offset, limit)
 	if err != nil {
 		return DomainFetchResult{}, err
 	}
-	defer func() {
-		if err := cursor.Close(ctx); err != nil {
-			log.Printf("Error closing cursor: %v", err)
-		}
-	}()
-
-	// Collect message IDs from mailbox entries
-	var entries []mailboxEntry
-	if err = cursor.All(ctx, &entries); err != nil {
-		return DomainFetchResult{}, err
-	}
-
 	if len(entries) == 0 {
-		// No messages found
 		return DomainFetchResult{
 			Total:    int(total),
 			Limit:    limit,
@@ -362,44 +313,10 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 		}, nil
 	}
 
-	// Extract message IDs to fetch actual messages
-	var messageIDs []string
-	for _, entry := range entries {
-		messageIDs = append(messageIDs, entry.MessageID)
-	}
-
-	// Fetch the actual messages
-	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
-	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
+	messageIDs := extractMessageIDs(entries)
+	messages, err := m.fetchMessagesByIDs(ctx, messageIDs, entries)
 	if err != nil {
 		return DomainFetchResult{}, err
-	}
-	defer func() {
-		if err := messageCursor.Close(ctx); err != nil {
-			log.Printf("Error closing message cursor: %v", err)
-		}
-	}()
-
-	// Map to store messages by ID for quick lookup
-	messageMap := make(map[string]bson.M)
-	var rawMessages []bson.M
-	if err = messageCursor.All(ctx, &rawMessages); err != nil {
-		return DomainFetchResult{}, err
-	}
-
-	for _, msg := range rawMessages {
-		if msgID, ok := msg["messageId"].(string); ok {
-			messageMap[msgID] = msg
-		}
-	}
-
-	// Convert to domain Message objects in the correct order
-	var messages []Message
-	for _, entry := range entries {
-		if rawMsg, found := messageMap[entry.MessageID]; found {
-			message := convertBsonToMessage(rawMsg, entry.Read)
-			messages = append(messages, message)
-		}
 	}
 
 	return DomainFetchResult{
@@ -410,65 +327,195 @@ func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest)
 	}, nil
 }
 
+// getUserQuillMail retrieves the user's quillmail address from the users collection
+func (m *MongoMessageService) getUserQuillMail(ctx context.Context, userID string) (string, error) {
+	collection := m.db.Collection("users")
+	filter := bson.M{"_id": userID}
+	var result struct {
+		UserQuillMail string `bson:"userQuillMail"`
+	}
+	err := collection.FindOne(ctx, filter).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return "", err
+		}
+		return "", fmt.Errorf("error retrieving userQuillMail: %w", err)
+	}
+	return result.UserQuillMail, nil
+}
+
+// buildMailboxFilter builds the filter for mailbox queries based on fetch mode
+func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M {
+	if req.Mode == FetchModeThread && req.ThreadID != nil {
+		return bson.M{
+			"userId":           userID,
+			"options.threadID": *req.ThreadID,
+		}
+	} else if req.Mode == FetchModeFolder && req.Folder != nil {
+		return bson.M{
+			"userId": quillmail,
+			"folder": *req.Folder,
+		}
+	}
+	return bson.M{
+		"userId": userID,
+		"folder": "inbox",
+	}
+}
+
+// fetchMailboxEntries retrieves mailbox entries with sorting, skip, and limit
+func (m *MongoMessageService) fetchMailboxEntries(ctx context.Context, filter bson.M, offset, limit int) ([]mailboxEntry, error) {
+	findOptions := options.Find().
+		SetSort(bson.D{{Key: "receivedAt", Value: -1}}).
+		SetSkip(int64(offset)).
+		SetLimit(int64(limit))
+
+	cursor, err := m.db.Collection("mailboxes").Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			log.Printf("Error closing cursor: %v", err)
+		}
+	}()
+
+	var entries []mailboxEntry
+	if err = cursor.All(ctx, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// extractMessageIDs extracts message IDs from mailbox entries
+func extractMessageIDs(entries []mailboxEntry) []string {
+	var messageIDs []string
+	for _, entry := range entries {
+		messageIDs = append(messageIDs, entry.MessageID)
+	}
+	return messageIDs
+}
+
+// fetchMessagesByIDs fetches messages and maps them to domain Message objects in the order of entries
+func (m *MongoMessageService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]Message, error) {
+	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
+	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := messageCursor.Close(ctx); err != nil {
+			log.Printf("Error closing message cursor: %v", err)
+		}
+	}()
+
+	messageMap := make(map[string]bson.M)
+	var rawMessages []bson.M
+	if err = messageCursor.All(ctx, &rawMessages); err != nil {
+		return nil, err
+	}
+	for _, msg := range rawMessages {
+		if msgID, ok := msg["messageId"].(string); ok {
+			messageMap[msgID] = msg
+		}
+	}
+
+	var messages []Message
+	for _, entry := range entries {
+		if rawMsg, found := messageMap[entry.MessageID]; found {
+			message := convertBsonToMessage(rawMsg, entry.Read)
+			messages = append(messages, message)
+		}
+	}
+	return messages, nil
+}
+
 // Helper function to convert BSON to Message domain object
 func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
-	// This is a simplified conversion - in a real implementation you'd need to handle all fields properly
-	thredid := bsonMsg["options"].(bson.M)["threadID"].(string)
 	msg := Message{
-		MessageID: bsonMsg["messageId"].(string),
-		ThreadID:  thredid,
-		From:      bsonMsg["fromID"].(string),
+		MessageID: getStringFromBson(bsonMsg, "messageId"),
+		ThreadID:  getThreadIDFromBson(bsonMsg),
+		From:      getStringFromBson(bsonMsg, "fromID"),
 		Read:      read,
 	}
 
-	// Handle array fields
-	if pArr, ok := bsonMsg["to"].(primitive.A); ok {
-		// pArr is now of type primitive.A, which behaves exactly like []interface{}
-		// for iteration purposes.
-		for _, t := range pArr {
-			if str, ok := t.(string); ok {
-				msg.To = append(msg.To, str)
-			}
-		}
-	}
-
-	if cc, ok := bsonMsg["cc"].(primitive.A); ok {
-		for _, c := range cc {
-			if str, ok := c.(string); ok {
-				msg.CC = append(msg.CC, str)
-			}
-		}
-	}
-
-	// Handle subject
-	if subj, ok := bsonMsg["subject"].(string); ok {
-		msg.Subject = subj
-	}
-
-	// Handle sentAt
-	if sentAtDT, ok := bsonMsg["sentAt"].(primitive.DateTime); ok {
-		msg.SentAt = sentAtDT.Time()
-	}
-
-	// Handle body
-	if body, ok := bsonMsg["body"].(bson.M); ok {
-		if contentArr, ok := body["content"].(primitive.A); ok {
-			for _, c := range contentArr {
-				if contentMap, ok := c.(bson.M); ok {
-					var contentItem Content
-					if t, ok := contentMap["type"].(ContentType); ok {
-						contentItem.Type = t
-					}
-					if v, ok := contentMap["value"].(string); ok {
-						contentItem.Value = v
-					}
-					msg.Body.Content = append(msg.Body.Content, contentItem)
-				}
-			}
-		}
-	}
+	msg.To = getStringArrayFromBson(bsonMsg, "to")
+	msg.CC = getStringArrayFromBson(bsonMsg, "cc")
+	msg.Subject = getStringFromBson(bsonMsg, "subject")
+	msg.SentAt = getTimeFromBson(bsonMsg, "sentAt")
+	msg.Body = getBodyFromBson(bsonMsg)
 
 	return msg
+}
+
+func getStringFromBson(bsonMsg bson.M, key string) string {
+	if val, ok := bsonMsg[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func getThreadIDFromBson(bsonMsg bson.M) string {
+	if options, ok := bsonMsg["options"].(bson.M); ok {
+		if threadID, ok := options["threadID"].(string); ok {
+			return threadID
+		}
+	}
+	return ""
+}
+
+func getStringArrayFromBson(bsonMsg bson.M, key string) []string {
+	var arr []string
+	if pArr, ok := bsonMsg[key].(primitive.A); ok {
+		for _, t := range pArr {
+			if str, ok := t.(string); ok {
+				arr = append(arr, str)
+			}
+		}
+	}
+	return arr
+}
+
+func getTimeFromBson(bsonMsg bson.M, key string) time.Time {
+	if sentAtDT, ok := bsonMsg[key].(primitive.DateTime); ok {
+		return sentAtDT.Time()
+	}
+	return time.Time{}
+}
+
+func getBodyFromBson(bsonMsg bson.M) Body {
+	var body Body
+	bodyMap, ok := bsonMsg["body"].(bson.M)
+	if !ok {
+		return body
+	}
+	contentArr, ok := bodyMap["content"].(primitive.A)
+	if !ok {
+		return body
+	}
+	for _, c := range contentArr {
+		contentItem := parseContentItem(c)
+		if contentItem != nil {
+			body.Content = append(body.Content, *contentItem)
+		}
+	}
+	return body
+}
+
+// Helper to parse a content item from BSON
+func parseContentItem(c interface{}) *Content {
+	contentMap, ok := c.(bson.M)
+	if !ok {
+		return nil
+	}
+	var contentItem Content
+	if t, ok := contentMap["type"].(ContentType); ok {
+		contentItem.Type = t
+	}
+	if v, ok := contentMap["value"].(string); ok {
+		contentItem.Value = v
+	}
+	return &contentItem
 }
 
 // ErrUserNotAuthenticated is returned when a user ID cannot be extracted from context
@@ -491,4 +538,46 @@ func extractDomain(input string) string {
 func isUUID(input string) bool {
 	_, err := uuid.Parse(input)
 	return err == nil
+}
+
+// Helper to get or validate messageID
+func getOrValidateMessageID(messageID string) (string, error) {
+	if messageID != "" {
+		if !isUUID(messageID) {
+			return "", errorString("invalid message ID: must be a UUID")
+		}
+		return messageID, nil
+	}
+	return uuid.New().String(), nil
+}
+
+// Helper to get or validate threadID
+func getOrValidateThreadID(threadIDPtr *string) (string, error) {
+	if threadIDPtr != nil && *threadIDPtr != "" {
+		if !isUUID(*threadIDPtr) {
+			return "", errorString("invalid thread ID: must be a UUID")
+		}
+		return *threadIDPtr, nil
+	}
+	return uuid.New().String(), nil
+}
+
+// Helper to split recipients and build mailbox entries
+func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, now time.Time) (internal []string, external []string, entries []interface{}) {
+	for _, addr := range recipients {
+		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
+			internal = append(internal, addr)
+			entries = append(entries, mailboxEntry{
+				UserID:     addr,
+				MessageID:  messageID,
+				ThreadID:   threadID,
+				Folder:     "inbox",
+				Read:       false,
+				ReceivedAt: now,
+			})
+		} else {
+			external = append(external, addr)
+		}
+	}
+	return
 }
