@@ -72,10 +72,15 @@ type mailboxEntry struct {
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
 func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-	if extractDomain(req.From) == constants.DOMAIN_NAME {
-		return m.SendInternal(ctx, req)
+	// Validate the request
+	if validateQuillMailFormat(req.From) {
+		if extractDomain(req.From) == constants.DOMAIN_NAME {
+			return m.SendInternal(ctx, req)
+		}
+		return m.SendExternal(ctx, req)
 	}
-	return m.SendExternal(ctx, req)
+	return DomainSendResult{}, errorString("invalid sender address format")
+
 }
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
