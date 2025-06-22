@@ -79,6 +79,14 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 }
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+
+	// Validate recipient address format
+	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
+		if !validateQuillMailFormat(addr) {
+			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+		}
+	}
+
 	messageID, err := getOrValidateMessageID(req.MessageID)
 	if err != nil {
 		return DomainSendResult{}, err
@@ -751,4 +759,15 @@ func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID str
 		}
 	}
 	return
+}
+
+// validateQuillMailFormat checks if the input matches the format (username)~(mail.com)
+func validateQuillMailFormat(input string) bool {
+	parts := strings.Split(input, "~")
+	if len(parts) != 2 {
+		return false
+	}
+	username := parts[0]
+	domain := parts[1]
+	return username != "" && domain != "" && strings.Contains(domain, ".")
 }

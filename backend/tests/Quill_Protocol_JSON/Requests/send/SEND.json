@@ -7,7 +7,7 @@
     "payload": {
         "message_id": "",
         "from": "bob~quillmail.xyz",
-        "to": ["omer~quillmail.xyz"],
+        "to": ["omerquillmail.xyz"],
         "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
         "bcc": ["eve~quillmail.xyz"],
         "subject": "Test email example",
