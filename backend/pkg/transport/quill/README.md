@@ -330,5 +330,3 @@ All errors use a unified `ERROR` packet:
 * **Reliability:** Handle partial frames, connection drops, session resumption.
 
 ---
-
-*End of Specification*
