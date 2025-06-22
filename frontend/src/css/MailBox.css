@@ -1,0 +1,43 @@
+.inbox-view {
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 8rem); /* Full height of the viewport */
+  overflow: hidden; /* prevent scroll leaking */
+
+}
+.message-list {
+  width: 30%;
+  padding: 1.2rem;
+  overflow-y: auto;
+  border-right: 1px solid #ccc;
+}
+.mail-content-conntainer {
+  width: 80%;
+  padding: 1rem;
+  overflow-y: auto;
+}
+.message-item {
+  padding: 0.5rem;
+  border-bottom: 1px solid #ccc;
+  cursor: pointer;
+}
+/* Applies to the entire page or specific element */
+::-webkit-scrollbar {
+  width: 0.7rem;  /* Vertical scrollbar width */
+  height: auto; /* Horizontal scrollbar height */
+}
+
+::-webkit-scrollbar-track {
+  background: #f0f0f0; /* Background of the track */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #888; /* Scroll thumb color */
+  border-radius: 10px;
+  border: 2px solid #f0f0f0; /* Optional padding effect */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555; /* On hover */
+}

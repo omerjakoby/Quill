@@ -3,7 +3,7 @@
 html,
 body,
 #root {
-  height: 100%; /* Keep this */
+  height: 100vh; /* Keep this */
   width: 100%;  /* Keep this */
   margin: 0;    /* Keep this */
   padding: 0;   /* Keep this */

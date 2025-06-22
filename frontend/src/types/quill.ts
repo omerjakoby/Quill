@@ -4,18 +4,13 @@
  * Base interface for all Quill protocol packets.
  * All packets must adhere to this common structure.
  */
-interface QuillBasePacket {
+export interface QuillBasePacket {
+  type: any;
   protocol: "quill";
   version: "1.0";
   timestamp: string; // ISO 8601 format, e.g., "2025-06-17T15:45:12Z"
 }
-
 // --- PING Protocol ---
-
-/**
- * Request packet for a PING operation.
- * Used to check server liveness and session validity.
- */
 export interface PingPacket extends QuillBasePacket {
   type: "PING";
   session_token: string;
@@ -69,29 +64,53 @@ export interface FetchPacket extends QuillBasePacket {
 /**
  * Structure for a single message overview (returned in FETCH_RESPONSE overview mode).
  */
+// frontend/src/types/quill.ts
+
+// ... (QuillBasePacket, Ping, Send protocols are unchanged) ...
+
+// --- FETCH Protocol ---
+
+// ... (FetchOverviewPayload and FetchThreadPayload are unchanged) ...
+
+/**
+ * Structure for a single message overview (returned in FETCH_RESPONSE overview mode).
+ * UPDATED to include 'to', 'cc', 'body', and 'read' properties from your mock.
+ */
 export interface MessageOverview {
   id: string;
   thread_id: string;
   from: string;
+  to: string[]; // Added from mock
+  cc?: string[]; // Added from mock, optional
   subject: string;
   snippet: string; // A short summary of the message body
+  body: { // Added from mock
+    content: {
+      type: string; // Your mock has empty string type
+      value: string;
+    }[];
+  };
   timestamp: string; // ISO 8601 date string
-  is_read: boolean;
-  has_attachment: boolean;
+  read: boolean; // Changed from 'is_read' to 'read' to match mock
+  has_attachment?: boolean; // Optional, might not always be present in mock
 }
 
 /**
  * Payload for a successful FETCH_RESPONSE.
+ * UPDATED 'mode' to allow "folder" and 'messages' type.
  */
 export interface FetchResponseSuccessPayload {
   status: "OK";
-  mode: "overview"; // Or 'thread' if thread mode was requested
+  mode: "overview" | "folder" | "thread"; // Added "folder" and "thread" from mock (if type is "FETCH_RESPONSE")
   messages: MessageOverview[]; // List of messages for overview mode
   total: number; // Total number of messages in the folder/thread
-  limit: number;
-  offset: number;
-  // TODO: Add full message/thread payload if mode is 'thread'
+  limit?: number; // Optional, might not always be present in mock
+  offset?: number; // Optional, might not always be present in mock
 }
+
+// ... (FetchResponseErrorPayload and FetchResponsePacket are unchanged) ...
+
+// ... (Send Protocol is unchanged) ...
 
 /**
  * Payload for an erroneous FETCH_RESPONSE.

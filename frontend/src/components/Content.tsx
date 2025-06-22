@@ -8,7 +8,7 @@ interface ContentProps {
   handleSignOut: () => Promise<void>; // 'handleSignOut' is a function returning a Promise that resolves to void
 }
 
-function Content({ user, handleSignOut }: ContentProps) {
+function Content() {
   return (
       <h1>hello</h1>
   );

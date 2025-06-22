@@ -27,10 +27,10 @@ function MainWebsite({ user, handleSignOut }: MainWebsiteProps) {
         </div>
         <div className="content-area">
           <Routes>
-            <Route path="/" element={<Inbox/>} />
-            <Route path="/Compose" element={<Compose/>} />
-            <Route path="/Unread" element={<Unread/>} />
-            <Route path="/Inbox" element={<Inbox />} />
+            <Route path="/" element={<Inbox user={user}/>} />
+            <Route path="/Compose" element={<Compose />} />
+            <Route path="/Unread" element={<Unread />} />
+            <Route path="/Inbox" element={<Inbox user={user}/>} />
             <Route path="/Sent" element={<Sent />} />
           </Routes>
         </div>

@@ -18,7 +18,7 @@ function Bar({user, handleSignOut}: TopBarProps) {
       <div className="main-account-container">
         <div className="user-info">        
           <img        
-            src={user?.photoURL?? undefined}
+            src={user?.photoURL ?? undefined}
             alt="User profile"
             className="profile-pic"
           />
