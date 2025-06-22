@@ -7,17 +7,18 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 
 ## Table of Contents
 
-1. [Overview](#overview)
-2. [Packet Structure](#packet-structure)
-3. [Signing & Canonicalization](#signing--canonicalization)
-4. [Handshake](#handshake)
-5. [Authentication (Optional)](#authentication-optional)
-6. [Message Transfer](#message-transfer)
-7. [Key Management](#key-management)
-8. [Anti-Spam Negotiation](#anti-spam-negotiation)
-9. [Error Handling](#error-handling)
-10. [Security Considerations](#security-considerations)
-11. [Packet Framing & Transport](#packet-framing--transport)
+1.  [Overview](#overview)
+2.  [Packet Structure](#packet-structure)
+3.  [Signing & Canonicalization](#signing--canonicalization)
+4.  [Handshake](#handshake)
+5.  [Authentication (Optional)](#authentication-optional)
+6.  [Sending Emails](#Sending-Emails)
+7.  [Fetching Emails](#fetching-emails)
+8.  [Key Management](#key-management)
+9.  [Anti-Spam Negotiation](#anti-spam-negotiation)
+10. [Error Handling](#error-handling)
+11. [Security Considerations](#security-considerations)
+12. [Packet Framing & Transport](#packet-framing--transport)
 
 ---
 
@@ -40,7 +41,7 @@ All packets follow a unified schema:
   "type": "PACKET_TYPE",
   "timestamp": "2025-06-22T17:00:00Z",
   "payload": {"packet-specific fields"},
-  "signature": "<base64(sig)>",
+  "signature": "<base64(sig)>",  // Optional: See Signing section
   "anti_spam": {"optional, e.g. PoW or token"}
 }
 ```
@@ -48,7 +49,7 @@ All packets follow a unified schema:
 * **type**: Packet name (e.g., `HANDSHAKE`, `SEND_MESSAGE_INIT`).
 * **timestamp**: ISO‑8601, ±60 s skew for replay protection.
 * **payload**: Holds all packet-specific data; varies per packet type and is versioned to support protocol evolution.
-* **signature**: Always present as a string. For full details on when and how signatures are applied (pre-auth omission, client vs. server signing), see [Signing & Canonicalization](#signing--canonicalization)
+* **signature**:  Optional. Present only on post-authentication packets. For full details on when and how signatures are applied, see [Signing & Canonicalization](#signing--canonicalization).
 * **anti\_spam**:  Optional; provides proof-of-work, reputation, or other anti-abuse metadata. See [Anti-Spam Negotiation](#anti-spam-negotiation) for details on how methods are negotiated and enforced.
 
 ---
@@ -61,7 +62,7 @@ All packets follow a unified schema:
 
 ### Signature Usage
 
-* **Pre-auth packets** (e.g., `HANDSHAKE`, `HANDSHAKE_ACK`, `FETCH_KEYS`) do not include the signature field; these packets rely on TLS for authenticity.
+* **Pre-auth packets** (e.g., `HANDSHAKE`, `HANDSHAKE_ACK`, `FETCH_KEYS`, `ERROR`) do not include the signature field; these packets rely on TLS for authenticity.
 * **Post-auth packets** (e.g., `SEND_MESSAGE_INIT`, `SEND_MESSAGE_PART`) **must include** a signature:
 
   * **Empty string** indicates the server will sign on the client's behalf (server-managed keys).
@@ -102,7 +103,6 @@ Servers MUST verify all non-empty signatures against the user's public key and m
 
 * **identity**: Domain or user entity initiating the connection; used for public key discovery and trust checks.
 * **encryption**: End-to-end encryption support flag (not available in v1).
-* **max\_chunk\_size**: Maximum byte size for each `SEND_MESSAGE_PART`, allowing efficient streaming of large messages.
 * **supported\_anti\_spam**: List of anti-spam methods the initiator can perform (default v1: `hashcash`).
 ### HANDSHAKE  (Client/Server -> Server)
 
@@ -115,12 +115,10 @@ Servers MUST verify all non-empty signatures against the user's public key and m
     "version": "1.0",
     "identity": "quillmail.com",
     "capabilities": {
-      "encryption": false,
-      "max_chunk_size": 65536
+      "encryption": false
     },
     "supported_anti_spam": ["hashcash"]
   },
-  "signature": "..."
 }
 ```
 
@@ -135,14 +133,13 @@ Servers MUST verify all non-empty signatures against the user's public key and m
     "version": "1.0",
     "required_anti_spam": {
       "SEND_MESSAGE_INIT": { "type": "hashcash", "bits": 22 },
-      "FETCH_KEYS": { "type": "none" }
+      "FETCH_KEYS": { "type": "none" },
+      "FETCH_EMAIL":{"type": "hashcash", "bits": 22}
     },
     "capabilities": {
-      "encryption": false,
-      "max_chunk_size": 65536
+      "encryption": false
     }
   },
-  "signature": "..."
 }
 ```
 
@@ -158,7 +155,6 @@ Servers MUST verify all non-empty signatures against the user's public key and m
     "context": "HANDSHAKE",
     "temporary": false
   },
-  "signature": "..."
 }
 ```
 
@@ -178,7 +174,6 @@ Servers may require client authentication; protocol defines a generic structure.
     "method": "session_token",
     "credentials": { "token": "abc123-session-token" }
   },
-  "signature": "..."
 }
 ```
 
@@ -192,17 +187,18 @@ Servers may require client authentication; protocol defines a generic structure.
     "accepted": true,
     "session": { "expires_in": 3600, "identity": "alice@quillmail.com" }
   },
-  "signature": "..."
 }
 ```
 
 ---
 
-## Message Transfer
+## Sending Emails
 
-**Purpose**: Transfer email messages in a structured, chunked manner once the client is authenticated.
+**Purpose**: Transfer email messages in a structured manner once the client is authenticated.
 
-**Fields in `SEND_MESSAGE.payload`:**
+### SEND\_EMAIL  (Client/Server -> Server)
+
+**Fields in `SEND_EMAIL.payload`:**
 
 * **to**: List of primary recipient email addresses.
 * **cc**: List of carbon-copy recipient addresses.
@@ -216,19 +212,16 @@ Servers may require client authentication; protocol defines a generic structure.
 
   * `filename`: Name of the file.
   * `mimetype`: MIME type (e.g., `application/pdf`).
-  * `link`: URL or reference for retrieval; all attachments are link-only in v1.
+  * `link`: URL or reference for retrieval; all attachments are link-only.
 * **options**:
   * `expires_in_seconds`: Time-to-live after which the server may delete or expire the message automatically.
   * `one_time`: Boolean; if `true`, the server **SHOULD** delete the message after a single successful fetch. Note: malicious providers could ignore this and retain messages indefinitely.
   * `thread_id`: Identifier for grouping related messages into a conversation thread.
 
 
-### SEND\_MESSAGE  (Client/Server -> Server)
-
-
 ```json
 {
-  "type": "SEND_MESSAGE_INIT",
+  "type": "SEND_EMAIL",
   "timestamp": "2025-06-22T17:20:00Z",
   "payload": {
     "message_id": "msg-123",
@@ -242,7 +235,6 @@ Servers may require client authentication; protocol defines a generic structure.
       "html": "<p>Hi <strong>Bob</strong>,<br>See below.</p>"
     },
     "attachments": [
-      { "filename": "report.pdf", "mimetype": "application/pdf", "link": "" },
       { "filename": "diagram.png", "mimetype": "image/png", "link": "https://cdn.example.com/diagram.png" }
     ],
     "options": {
@@ -256,11 +248,11 @@ Servers may require client authentication; protocol defines a generic structure.
 }
 ```
 
-### SEND\_MESSAGE\_ACK  (Server -> Server/Client)
+### SEND\_EMAIL\_ACK  (Server -> Server/Client)
 
 ```json
 {
-  "type": "SEND_MESSAGE_ACK",
+  "type": "SEND_EMAIL_ACK",
   "timestamp": "2025-06-22T17:20:03Z",
   "payload": {
     "status": "OK",
@@ -273,15 +265,39 @@ Servers may require client authentication; protocol defines a generic structure.
 
 ---
 
-## FETCH EMAILS
+## Fetching Emails
 
-### FETCH\_EMAILS Overview (Client -> Server)
+**Purpose**: Retrieve conversation thread overviews and full message threads with pagination support.
 
-**Purpose**: Ask the server for a paginated list of email metadata (“overview” mode)
+### FETCH\_EMAIL Overview (Client -> Server)
+
+**Fields in `FETCH_EMAIL.payload`:**
+
+* **mode**: Must be `"overview"`.
+* **folder**: Name of the folder (e.g., `"inbox"`).
+* **limit**: Maximum number of threads to return.
+* **offset**: Pagination offset (number of threads to skip).
+* **filters** (optional): Object to restrict result set:
+
+  * **search**: Full-text search options:
+
+    * **keywords**: List of words to match.
+    * **exact\_phrase**: Exact string to match.
+    * **from**: List of sender addresses.
+    * **to**: List of recipient addresses.
+  * **flags**: Message flag filters:
+
+    * **has\_attachments**: `true` or `false`.
+    * **is\_read**: `true` or `false`.
+    * **is\_starred**: `true` or `false`.
+  * **date\_range**: Time range filters:
+
+    * **after**: ISO-8601 timestamp; include messages sent after this time.
+    * **before**: ISO-8601 timestamp; include messages sent before this time.
 
 ```json
 {
-  "type": "FETCH_EMAILS",
+  "type": "FETCH_EMAIL",
   "timestamp": "2025-06-22T18:00:00Z",
   "payload": {
     "mode": "overview",
@@ -311,24 +327,125 @@ Servers may require client authentication; protocol defines a generic structure.
 }
 ```
 
-### FETCH\_EMAILS Thread (Client -> Server)
+### FETCH\_EMAIL\_RESPONSE Overview (Server -> Client)
 
+**Fields in `FETCH_EMAIL_RESPONSE.payload`:**
+
+* **mode**: Echoes `"overview"`.
+* **threads**: Array of thread summaries:
+
+  * **thread\_id**: Conversation identifier.
+  * **latest\_message**: Summary of the most recent message:
+
+    * **id**, **thread\_id**, **from**, **subject**, **timestamp**, **snippet**, **flags**.
+  * **count**: Total messages in the thread within the folder.
+  * **unread\_count**: Number of unread messages in that thread.
+* **total\_threads**: Total number of threads available.
+* **limit**, **offset**: Echo pagination parameters.
 
 ```json
 {
-  "type": "FETCH_EMAILS",
-  "timestamp": "2025-06-22T18:00:00Z",
+  "type": "FETCH_EMAIL_RESPONSE",
+  "timestamp": "2025-06-22T20:00:01Z",
   "payload": {
-    "mode": "thread",
-    "thread_id": "thread-abc123",
+    "status": "OK",
+    "mode": "overview",
+    "threads": [
+      {
+        "thread_id": "thread-495abc7d",
+        "latest_message": {
+          "id": "msg-8241e",
+          "thread_id": "thread-495abc7d",
+          "from": "bob@quillmail.com",
+          "subject": "Re: Lunch tomorrow?",
+          "timestamp": "2025-06-22T18:50:00Z",
+          "snippet": "Sure, let's meet at noon.",
+          "flags": []
+        },
+        "count": 5,
+        "unread_count": 2
+      }
+    ],
+    "total_threads": 42,
     "limit": 20,
-    "offset": 0,
-  },
-  "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "omer@quillmail.xyz", "bits": 22, "nonce": "000abc123", "timestamp": "..." }
+    "offset": 0
+  }
 }
 ```
 
+---
+
+### FETCH\_EMAIL Thread  (CLient -> Server)
+
+**Fields in `FETCH_EMAIL.payload`:**
+
+* **mode**: Must be `"thread"`.
+* **thread\_id**: Identifier of the conversation thread.
+* **limit**: Maximum number of messages to return.
+* **offset**: Pagination offset (number of messages to skip).
+
+```json
+{
+  "type": "FETCH_EMAIL",
+  "timestamp": "2025-06-22T20:05:00Z",
+  "payload": {
+    "mode": "thread",
+    "thread_id": "thread-495abc7d",
+    "limit": 5,
+    "offset": 0
+  }
+}
+```
+
+### FETCH\_EMAIL\_RESPONSE Thread (Server -> Client)
+
+**Fields in `FETCH_EMAIL_RESPONSE.payload`:**
+
+* **status**: `"OK"` or `"ERROR"`.
+* **mode**: Echoes `"thread"`.
+* **thread\_id**: Conversation identifier.
+* **messages**: Array of full message objects (`MessageDTO`):
+
+  * **id**, **from**, **to**, **cc**, **bcc**, **subject**
+  * **body**: `{ "text": ..., "html": ... }`
+  * **attachments**: Array of `{ filename, mimetype, link }`.
+  * **timestamp**, **flags**.
+* **total\_messages**: Total messages in the thread.
+* **limit**, **offset**: Echo pagination parameters.
+
+```json
+{
+  "type": "FETCH_EMAIL_RESPONSE",
+  "timestamp": "2025-06-22T20:05:01Z",
+  "payload": {
+    "status": "OK",
+    "mode": "thread",
+    "thread_id": "thread-495abc7d",
+    "messages": [
+      {
+        "id": "msg-8241d",
+        "from": "alice@quillmail.com",
+        "to": ["bob@quillmail.com"],
+        "cc": [],
+        "bcc": [],
+        "subject": "Lunch tomorrow?",
+        "body": {
+          "text": "Hey Bob, are you free for lunch tomorrow?",
+          "html": "<p>Hey <strong>Bob</strong>, are you free for lunch tomorrow?</p>"
+        },
+        "attachments": [
+          { "filename": "menu.pdf", "mimetype": "application/pdf", "link": "https://cdn.quillmail.com/menu.pdf" }
+        ],
+        "timestamp": "2025-06-22T18:45:00Z",
+        "flags": ["starred", "read"]
+      }
+    ],
+    "total_messages": 5,
+    "limit": 5,
+    "offset": 0
+  }
+}
+```
 
 ---
 
@@ -343,18 +460,17 @@ These key management strategies are implementation-specific and not enforced by 
 
 ---
 
-### FETCH\_KEYS  (Server -> Server)
+### FETCH\_KEYS  (Server/Client -> Server)
 
 ```json
 {
   "type": "FETCH_KEYS",
   "timestamp": "2025-06-22T17:30:00Z",
   "payload": { "query": "alice@quillmail.com" },
-  "signature": "..."
 }
 ```
 
-### KEY\_RESPONSE  (Server -> Server)
+### KEY\_RESPONSE  (Server -> Server/Client)
 
 ```json
 {
@@ -365,7 +481,6 @@ These key management strategies are implementation-specific and not enforced by 
     "public_key": "base64-public-key",
     "expires": "2026-01-01T00:00:00Z"
   },
-  "signature": "..."
 }
 ```
 
@@ -384,7 +499,6 @@ All errors use a unified `ERROR` packet:
     "temporary": true,
     "retry_after": 60
   },
-  "signature": "..."
 }
 ```
 
@@ -395,5 +509,4 @@ All errors use a unified `ERROR` packet:
 * **Message:** `INVALID_SIGNATURE`, `INVALID_RECIPIENTS`, `TOO_LARGE`, `SPAM_DETECTED`, `BLOCKED_DOMAIN`
 * **General:** `RATE_LIMITED`, `INVALID_TIMESTAMP`
 
-//add for fetch mail ask of too many mails
 ---
