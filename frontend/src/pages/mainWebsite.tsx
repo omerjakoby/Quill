@@ -1,5 +1,4 @@
-import Bar from '../components/UpperBar';
-import Content from '../components/Content';    
+import Bar from '../components/UpperBar';  
 import SideBar from '../components/SideBar';
 import Inbox from '../components/Inbox';
 import Unread from '../components/Unread';
@@ -15,16 +14,16 @@ interface MainWebsiteProps {
   handleSignOut: () => Promise<void>; // 'handleSignOut' is a function returning a Promise that resolves to void
 }
 
-function MainWebsite({ user, handleSignOut }: MainWebsiteProps) {
+function MainWebsite({ user, handleSignOut }: Readonly<MainWebsiteProps>) {
   return (
     <div className="main-website-container">
       <div className="top-bar-container">
         <Bar user={user} handleSignOut={handleSignOut}/>
       </div>
       <div className="content-container">
-        <div className="sidebar-container">
+        <aside className="sidebar-container">
           <SideBar />
-        </div>
+        </aside>
         <div className="content-area">
           <Routes>
             <Route path="/" element={<Inbox user={user}/>} />

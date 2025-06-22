@@ -21,7 +21,7 @@
     font-size: 1.5rem;
     width: 100%;
     padding: 1rem 1rem 1rem 1rem;
-    font-family:'inter', 'Roboto', 'Open Sans';
+    font-family:'inter', 'Roboto', 'Open Sans', sans-serif;
 }
 .sidebar-nav-active{
     text-decoration: none;
@@ -31,15 +31,15 @@
     border-radius: 1rem;
     background-color: #82bff18c;
     color: #0d30ce;
-    font-family:'Inter', 'Roboto', 'Open Sans';
+    font-family:'Inter', 'Roboto', 'Open Sans',sans-serif;
 }
 #settings{
     text-decoration: none;
     color: #333;
     font-size: 1.5rem;
-    margin-top: 29rem;
+    margin-top: 15rem;
     padding: 1rem 1rem 1rem 1rem;
-    font-family:'inter', 'Roboto', 'Open Sans';
+    font-family:'inter', 'Roboto', 'Open Sans',sans-serif;
 
 }
 #settings:hover{
@@ -49,8 +49,32 @@
     cursor: pointer;
 }
 #settingsSpan{
-    padding-right: 12rem;
+    padding-right: 10rem;
 }
 .SideBar{
     height: 100%;
+}
+.sidebar-header{
+   display: flex;
+   justify-items: center;
+   justify-content: center;
+   width: 100%;
+   align-items: center;
+   border-bottom: 1px solid #dadada;
+   gap:3rem;
+}
+.sidebar-header img {
+    padding: 0rem 3rem 0rem 0rem;
+    height: 8rem;
+    width: 6rem;
+    border-radius: 50%;
+    margin-right: 1rem;
+}
+.sidebar-header button {
+    border: none;
+    background-color: #dfd8d880;
+    color: #333;
+    cursor: pointer;
+    padding: 1rem 1rem 1rem 1rem;
+    border-radius: 1rem;
 }

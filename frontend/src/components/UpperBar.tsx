@@ -1,5 +1,5 @@
 import '../css/UpperBar.css';
-import logoFull from '../assets/logo-full-white.png';
+import logoFull from '../assets/logo-full-white-removebg-preview.png';
 import Box from '@mui/material/Box';
 import TextField from '@mui/material/TextField';
 
@@ -11,7 +11,7 @@ interface TopBarProps {
   handleSignOut: () => Promise<void>;
 }
 
-function Bar({user, handleSignOut}: TopBarProps) {
+function Bar({user, handleSignOut}: Readonly<TopBarProps>) {
   console.log("User in Bar component:", user);
   return (
     <div className="block">
