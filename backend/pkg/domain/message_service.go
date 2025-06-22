@@ -164,6 +164,12 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 		return DomainSendResult{}, err
 	}
 
+	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
+		if !validateQuillMailFormat(addr) {
+			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+		}
+	}
+
 	// Check for existing message
 	exists, err := m.messageExists(ctx, messageID)
 	if err != nil {
