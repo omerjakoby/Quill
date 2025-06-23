@@ -608,6 +608,9 @@ func ExtractTextStream(r io.Reader) (string, error) {
 			}
 			return "", z.Err()
 
+		case html.DoctypeToken:
+			// Ignore doctype tokens, do nothing
+
 		case html.StartTagToken:
 			t := z.Token()
 			if t.Data == "script" || t.Data == "style" {
@@ -629,6 +632,8 @@ func ExtractTextStream(r io.Reader) (string, error) {
 				buf.WriteString(txt)
 				buf.WriteByte(' ')
 			}
+		case html.CommentToken:
+			// Ignore comments, do nothing
 		default:
 			panic("unhandled default case")
 		}

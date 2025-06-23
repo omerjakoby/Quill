@@ -42,7 +42,7 @@ var EmailCategories = map[string]map[string]bool{
 		"new collection": true, "click to redeem": true, "earn points": true, "subscriber only": true,
 	},
 	"social": {
-		"friend request": true, "new follower": true, "mention": true, "tagged": true,
+		"friend request": true, "new follower": true, "mention": true, "tagged": true, "social media": true,
 		"notification": true, "activity": true, "update": true, "you have a new message": true,
 		"connect": true, "join": true, "poke": true, "like": true,
 		"comment": true, "share": true, "friend": true, "follower": true,
@@ -179,27 +179,18 @@ func ClassifyEmail(subject, body string) CategoryAnalysisResult {
 
 	// --- Step 3: Determine the best category based on priority and counts ---
 	// (This part of the logic remains unchanged and is correct)
-	if allCategoryCounts["spam"] > 0 {
-		return CategoryAnalysisResult{
-			BestCategory: "spam",
-			Counts:       allCategoryCounts,
-		}
-	}
 
 	maxMentions := -1
 	bestCategory := "primary"
 
 	for _, categoryName := range categoryPriorityOrder {
-		if categoryName == "spam" {
-			continue
-		}
 		if count := allCategoryCounts[categoryName]; count > maxMentions {
 			maxMentions = count
 			bestCategory = categoryName
 		}
 	}
 
-	if maxMentions < 5 {
+	if maxMentions <= 3 {
 		bestCategory = "primary"
 	}
 
