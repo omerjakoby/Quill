@@ -16,7 +16,7 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 7.  [Packet Framing & Transport](#packet-framing--transport)
 8.  [Handshake](#handshake)
 9.  [Authentication (Optional)](#authentication-optional)
-10.  [Sending Emails](#Sending-Emails)
+10. [Sending Emails](#Sending-Emails)
 11. [Fetching Emails](#fetching-emails)
 12. [Key Management & Federation](#Key-Management-and-Federation)
 13. [Error Handling](#error-handling)
@@ -126,11 +126,11 @@ Every message in the Quill protocol is defined by a hierarchy of attributes that
 
 A **Folder** represents the primary, mutually exclusive location of a message. A message can only be in one folder at a time.
 
-*   `inbox`: The default location for new, incoming messages.
-*   `sent`: A copy of messages sent by the user.
-*   `archive`: Messages kept but hidden from the main inbox view.
-*   `trash`: Messages marked for deletion. Servers typically have a policy to permanently delete items from this folder.
-*   `spam`: Messages identified as unsolicited junk mail.
+*   **`inbox`**: The default location for new, incoming messages.
+*   **`sent`**: A copy of messages sent by the user.
+*   **`archive`**: Messages kept but hidden from the main inbox view.
+*   **`trash`**: Messages marked for deletion. Servers typically have a policy to permanently delete items from this folder.
+*   **`spam`**: Messages identified as unsolicited junk mail.
 
 Servers **MUST** support these standard folders.
 
@@ -144,11 +144,11 @@ A **Category** is a classification that provides sub-organization for messages *
 
 The standard categories are:
 
-*   `inbox`: The default location for new, incoming messages.
-*   `sent`: Contains a copy of messages sent by the user.
-*   `archive`: For messages that should be kept but hidden from the main inbox view.
-*   `trash`: For messages marked for deletion. The server is responsible for its own policy on permanently deleting items from the trash (e.g., after 30 days).
-*   `spam`: For messages identified as unsolicited junk mail.
+*   **`primary`**: Person-to-person conversations and messages that don't fit other categories. This is the default.
+*   **`promotions`**: Marketing emails, offers, and other promotional content.
+*   **`social`**: Notifications from social networks, media-sharing sites, and other social platforms.
+*   **`updates`**: Automated confirmations, receipts, bills, and shipping notifications.
+*   **`forums`**: Messages from discussion groups and mailing lists.
 
 ### 3. Flags (State)
 
