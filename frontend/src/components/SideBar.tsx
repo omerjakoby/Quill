@@ -28,7 +28,7 @@ function SideBar() {
         <li><NavLink to="/Sent" className={({ isActive }) =>isActive ? 'sidebar-nav-active' : 'sidebar-nav-link'}><Send size='17'/>  {isOpen && <span>sent</span>}</NavLink></li>
         <li id="settings">
           {isOpen && <span id="settingsSpan">settings</span>}
-          <Settings size='25' />
+          <Settings size='20' />
         </li>
       </ul>
     </nav>

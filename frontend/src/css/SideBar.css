@@ -23,7 +23,7 @@
 .sidebar-nav-link{
     text-decoration: none;
     color: #333;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     width: 100%;
     padding: 1rem 1rem 1rem 1rem;
     font-family:'inter', 'Roboto', 'Open Sans', sans-serif;
@@ -33,7 +33,7 @@
 }
 .sidebar-nav-active{
     text-decoration: none;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     width: 100%;
     padding: 1rem 1rem 1rem 1rem;
     border-radius: 1rem;
@@ -47,7 +47,7 @@
 #settings{
     text-decoration: none;
     color: #333;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     margin-top: auto;
     padding: 1rem 1rem 1rem 1rem;
     font-family:'inter', 'Roboto', 'Open Sans',sans-serif;
