@@ -18,9 +18,10 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 9.  [Authentication (Optional)](#authentication-optional)
 10. [Sending Emails](#Sending-Emails)
 11. [Fetching Emails](#fetching-emails)
-12. [Key Management & Federation](#Key-Management-and-Federation)
-13. [Error Handling](#error-handling)
-14. [Error Codes](#Error-Code-Categories)
+12. [Updating Emails](#updating-emails)
+13. [Key Management & Federation](#Key-Management-and-Federation)
+14. [Error Handling](#error-handling)
+15. [Error Codes](#Error-Code-Categories)
 
 ---
 
@@ -30,7 +31,7 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 * **TLS**: **Required** for all client-server and server-server connections.
 * **Federation**: Each provider uses a CA-signed certificate, manages users, public keys, and trust policies.
 * **Extensibility**: Supports adding operations (e.g., delete, move) in future versions.
-* **Flow**: Handshake → (Auth) → Message Transfer → Key Management → Errors → …
+* **Flow**: Handshake → (Auth) → Message Transfer (Send/Fetch/Update) → Key Management → Errors → …
 
 ---
 
@@ -156,6 +157,8 @@ The standard categories are:
 
 *   `is_read` (boolean): `true` if the user has viewed the message.
 *   `is_starred` (boolean): `true` if the user has marked the message as important.
+*   `is_deleted` (boolean): `true` if the user has requested the message be permanently and immediately deleted.
+
 
 ---
 
@@ -527,6 +530,81 @@ Servers may require client authentication; protocol defines a generic structure.
     "offset": 0
   },
     "signature": "...",
+}
+```
+
+---
+
+## Updating Emails
+
+**Purpose**: Apply changes to the attributes of one or more existing messages. This command is used to move messages between folders, change their category, or update their flags (e.g., marking as read or starred).
+
+This is a bulk operation; a single command can update multiple messages with the same set of changes.
+
+### UPDATE\_EMAIL (Client -> Server)
+
+The client sends this packet to request changes to one or more messages. The operation is atomic for each message ID but not for the entire batch.
+
+**Fields in `UPDATE_EMAIL.payload`:**
+
+*   **message\_ids**: An array of `message_id` strings specifying which messages to modify.
+*   **updates**: An object containing the changes to apply. A client only needs to include the fields it wishes to change.
+    *   **folder** (optional): A string specifying the new target folder (e.g., `trash`, `archive`). Moving a message out of the `inbox` will cause the server to automatically clear its `category`.
+    *   **category** (optional): A string specifying the new category (e.g., `promotions`, `updates`). This operation is only valid if the message is and remains in the `inbox` folder.
+    *   **flags** (optional): An object containing boolean flag states.
+        *   `is_read` (boolean)
+        *   `is_starred` (boolean)
+        *   `is_deleted` (boolean)
+
+```json
+{
+  "type": "UPDATE_EMAIL",
+  "timestamp": "2025-06-22T21:00:00Z",
+  "payload": {
+    "message_ids": ["msg-8241d", "msg-cc904"],
+    "updates": {
+      "folder": "archive",
+      "flags": {
+        "is_read": true
+      }
+    }
+  },
+  "signature": "..."
+}
+```
+
+### UPDATE\_EMAIL\_ACK (Server -> Client)
+
+The server responds with an acknowledgment, indicating the outcome for each message specified in the request. This allows the client to handle partial successes or failures gracefully.
+
+**Fields in `UPDATE_EMAIL_ACK.payload`:**
+
+*   **results**: An array of objects, one for each `message_id` from the request.
+    *   **message\_id**: The identifier of the message being reported on.
+    *   **status**: A string, either `"OK"` for success or `"ERROR"` for failure.
+    *   **error** (optional): If `status` is `"ERROR"`, this object contains details about the failure, using the standard error structure. Common error codes include `THREAD_NOT_FOUND` or `PERMISSION_DENIED`.
+
+```json
+{
+  "type": "UPDATE_EMAIL_ACK",
+  "timestamp": "2025-06-22T21:00:01Z",
+  "payload": {
+    "results": [
+      {
+        "message_id": "msg-8241d",
+        "status": "OK"
+      },
+      {
+        "message_id": "msg-cc904",
+        "status": "ERROR",
+        "error": {
+          "code": "THREAD_NOT_FOUND",
+          "message": "Message with ID msg-cc904 does not exist."
+        }
+      }
+    ]
+  },
+  "signature": "..."
 }
 ```
 
