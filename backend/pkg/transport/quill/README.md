@@ -174,6 +174,7 @@ The standard categories are:
 
 **Purpose**: Establish a connection and negotiate protocol version, feature capabilities, and anti-spam requirements before any user-specific operations.
 
+* **supported_versions**: the handshake sends the supported version's of Quill protocol, the ack respond with the most recent one he also support. 
 * **identity**: Domain or user entity initiating the connection; For Server -> Server this will be the domain name; For Client -> Server this will be the user's email address
 * **encryption**: End-to-end encryption support flag (not available in v1).
 * **supported\_anti\_spam**: List of anti-spam methods the initiator can perform (default v1: `hashcash`).
@@ -185,7 +186,7 @@ The standard categories are:
   "timestamp": "2025-06-22T17:00:00Z",
   "payload": {
     "protocol": "quill",
-    "version": "1.0",
+    "supported_versions": ["1.0"],
     "identity": "quillmail.com",
     "options": {
       "encryption": false
