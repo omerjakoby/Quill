@@ -27,7 +27,7 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 ## Overview
 
 * **Transport**: Raw TCP with **length-prefixed** JSON packets.
-* **TLS**: **Required** for all client–server and server–server connections.
+* **TLS**: **Required** for all client-server and server-server connections.
 * **Federation**: Each provider uses a CA-signed certificate, manages users, public keys, and trust policies.
 * **Extensibility**: Supports adding operations (e.g., delete, move) in future versions.
 * **Flow**: Handshake → (Auth) → Message Transfer → Key Management → Errors → …
