@@ -4,7 +4,7 @@
     top: 0;
     left:0;
     width: 100%;
-    background-color: #FDFCFA;
+    background-color: #f5f0f0ab;
     color: black;
     border-bottom: 0.05rem solid #cfc8c8;
     height: 7rem;
@@ -17,7 +17,6 @@
     font-size: 1.2rem;
     font-family: 'Inter', sans-serif;
     padding: 2rem 2rem 2rem 2rem;
-    position: left;
     margin-left: 1rem;
 }
 .search-bar button:hover{
@@ -36,6 +35,7 @@
     padding: 1rem 1rem 1rem 0.2rem;
     justify-content: flex-start;
     gap:2rem;
+    flex-shrink:1;
     
 }
 .main-account-container{
@@ -43,10 +43,7 @@
     padding: 2rem 3rem 2rem 2rem;
     font-size: 1.2rem;
     font-family: 'Inter', sans-serif;
-
-
 }
-
 .user-info {
   display: flex;
   align-items: center;
