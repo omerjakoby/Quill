@@ -10,16 +10,17 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 1.  [Overview](#overview)
 2.  [Packet Structure](#packet-structure)
 3.  [Signing & Canonicalization](#signing--canonicalization)
-4.  [Handshake](#handshake)
-5.  [Authentication (Optional)](#authentication-optional)
-6.  [Sending Emails](#Sending-Emails)
-7.  [Fetching Emails](#fetching-emails)
-8.  [Key Management & Federation](#Key-Management-and-Federation)
-9.  [Anti-Spam Negotiation](#anti-spam-negotiation)
-10. [Error Handling](#error-handling)
-11. [Security Considerations](#security-considerations)
-12. [Packet Framing & Transport](#packet-framing--transport)
-13. [Error Codes](#Error-Code-Categories)
+4.  [Anti-Spam Negotiation](#anti-spam-negotiation)
+5.  [Security Considerations](#security-considerations)
+6.  [Message Attributes](#message-attributes)
+7.  [Packet Framing & Transport](#packet-framing--transport)
+8.  [Handshake](#handshake)
+9.  [Authentication (Optional)](#authentication-optional)
+10.  [Sending Emails](#Sending-Emails)
+11. [Fetching Emails](#fetching-emails)
+12. [Key Management & Federation](#Key-Management-and-Federation)
+13. [Error Handling](#error-handling)
+14. [Error Codes](#Error-Code-Categories)
 
 ---
 
@@ -114,6 +115,47 @@ The anti_spam object for a hashcash proof must contain the following fields:
 * **Logging:** Record auth failures, signature errors, spam rejections.
 * **Forward Secrecy:** Future support via ephemeral key exchange.
 * **BCC Privacy**: Servers MUST strip the bcc field from messages before delivering them to any to or cc recipients. However, the bcc field MUST be preserved when the message is fetched by the original sender.
+
+---
+
+## Message Attributes
+
+Every message in the Quill protocol is defined by a hierarchy of attributes that determine its location, classification, and state. These attributes are managed using the `UPDATE_EMAIL` command.
+
+### 1. Folder (Location)
+
+A **Folder** represents the primary, mutually exclusive location of a message. A message can only be in one folder at a time.
+
+*   `inbox`: The default location for new, incoming messages.
+*   `sent`: A copy of messages sent by the user.
+*   `archive`: Messages kept but hidden from the main inbox view.
+*   `trash`: Messages marked for deletion. Servers typically have a policy to permanently delete items from this folder.
+*   `spam`: Messages identified as unsolicited junk mail.
+
+Servers **MUST** support these standard folders.
+
+### 2. Category (Classification)
+
+A **Category** is a classification that provides sub-organization for messages **only within the `inbox` folder**.
+
+*   The receiving server is responsible for automatically classifying incoming messages into a category.
+*   If a message is moved from the `inbox` to any other folder (e.g., `trash`, `archive`), its category is cleared by the server.
+*   Setting a category is only a valid operation for messages currently located in the `inbox`.
+
+The standard categories are:
+
+*   `inbox`: The default location for new, incoming messages.
+*   `sent`: Contains a copy of messages sent by the user.
+*   `archive`: For messages that should be kept but hidden from the main inbox view.
+*   `trash`: For messages marked for deletion. The server is responsible for its own policy on permanently deleting items from the trash (e.g., after 30 days).
+*   `spam`: For messages identified as unsolicited junk mail.
+
+### 3. Flags (State)
+
+**Flags** are independent, boolean states that can be applied to any message, regardless of its folder or category.
+
+*   `is_read` (boolean): `true` if the user has viewed the message.
+*   `is_starred` (boolean): `true` if the user has marked the message as important.
 
 ---
 
@@ -523,7 +565,7 @@ The receiving server **MUST** perform the following checks:
 Because this endpoint reveals the existence of user accounts, each server operator is responsible for protecting its users from enumeration attacks and for acting as a good citizen on the network. This responsibility includes:
 
 *   **Behavioral Monitoring:** Servers **MUST** monitor the rate of `FETCH_KEYS` requests from peer servers. An abnormally high volume of requests indicates a potential attack or compromised server, which should be temporarily or permanently blocked.
-*   **Federation Trust Policy:** Servers **SHOULD** maintain a trust policy (e.g., a blocklist of peer certificates or domains) to immediately cut off communication with known bad actors.
+*   **Federation Trust Policy:** Servers **SHOULD** maintain a trust policy (e.g., a blacklist of peer certificates or domains) to immediately cut off communication with known bad actors.
 
 
 ---
