@@ -219,9 +219,15 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 		return DomainSendResult{}, err
 	}
 
+	category, err := m.GetCategory(ctx, req)
+	if err != nil {
+		log.Printf("Failed to get category for message: %v", err)
+		return DomainSendResult{}, err
+	}
+
 	// Create mailbox entries for all internal recipients
 	myRecipients := getInternalRecipients(req, constants.DOMAIN_NAME)
-	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, now)
+	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, category, now)
 	if len(mailboxEntries) > 0 {
 		_, err = m.db.Collection("mailboxes").InsertMany(ctx, mailboxEntries)
 		if err != nil {
@@ -287,7 +293,7 @@ func getInternalRecipients(req DomainSendRequest, domain string) []string {
 }
 
 // Helper to create mailbox entries
-func createMailboxEntries(recipients []string, messageID, threadID string, now time.Time) []interface{} {
+func createMailboxEntries(recipients []string, messageID, threadID string, category string, now time.Time) []interface{} {
 	var entries []interface{}
 	for _, recipient := range recipients {
 		entries = append(entries, mailboxEntry{
@@ -297,6 +303,7 @@ func createMailboxEntries(recipients []string, messageID, threadID string, now t
 			Folder:     "inbox",
 			Read:       false,
 			ReceivedAt: now,
+			Category:   category,
 		})
 	}
 	return entries
