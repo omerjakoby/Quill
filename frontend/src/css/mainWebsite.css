@@ -14,8 +14,7 @@
   flex-grow: 1;      /* --- THIS IS A KEY PIECE OF MAGIC --- */
 }
 .sidebar-container {  
-  width: 25.5rem; 
-  flex-shrink: 1; 
+  flex-shrink: 0;
   background-color: #f5f0f0ab;
   border-right: 0.05rem solid #cfc8c8;
   box-shadow:0.5rem 0 0.5rem -0.25rem #cfc8c8;

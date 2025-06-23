@@ -4,11 +4,13 @@
     list-style: none;
     border-radius: 1rem;
     margin-top: 0.5rem;
-    margin-right:3rem;
-    justify-items: center;
+    margin-right:1rem;
+    margin-left:1rem;
+    align-items: center;
 }
 .sidebar ul{
     margin-top:3rem;
+    padding: 0;
 
 }
 .sidebar li:hover{
@@ -22,6 +24,9 @@
     width: 100%;
     padding: 1rem 1rem 1rem 1rem;
     font-family:'inter', 'Roboto', 'Open Sans', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
 }
 .sidebar-nav-active{
     text-decoration: none;
@@ -32,6 +37,9 @@
     background-color: #82bff18c;
     color: #0d30ce;
     font-family:'Inter', 'Roboto', 'Open Sans',sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
 }
 #settings{
     text-decoration: none;
@@ -40,6 +48,9 @@
     margin-top: 15rem;
     padding: 1rem 1rem 1rem 1rem;
     font-family:'inter', 'Roboto', 'Open Sans',sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 
 }
 #settings:hover{
@@ -49,32 +60,49 @@
     cursor: pointer;
 }
 #settingsSpan{
-    padding-right: 10rem;
+    padding-right: 0;
 }
-.SideBar{
+.sidebar{
     height: 100%;
+    transition: width 0.2s ease-in-out;
+}
+.sidebar.open {
+    width: 25.5rem;
+}
+.sidebar.closed {
+    width: 6rem;
 }
 .sidebar-header{
    display: flex;
-   justify-items: center;
-   justify-content: center;
+   justify-content: space-between;
    width: 100%;
    align-items: center;
    border-bottom: 1px solid #dadada;
-   gap:3rem;
+   padding: 1rem;
+   box-sizing: border-box;
 }
 .sidebar-header img {
-    padding: 0rem 3rem 0rem 0rem;
-    height: 6rem;
-    width: 6rem;
-    border-radius: 50%;
-    margin-right: 1rem;
+    padding: 0;
+    height: 4rem;
+    width: auto;
+    border-radius: 10%;
+    margin-right: 0;
 }
 .sidebar-header button {
     border: none;
-    background-color: #dfd8d880;
+    background-color: transparent;
     color: #333;
     cursor: pointer;
-    padding: 1rem 1rem 1rem 1rem;
+    padding: 1rem;
     border-radius: 1rem;
+}
+
+.sidebar.closed .sidebar-header {
+    justify-content: center;
+}
+
+.sidebar.closed .sidebar-nav-link,
+.sidebar.closed .sidebar-nav-active,
+.sidebar.closed #settings {
+    justify-content: center;
 }
