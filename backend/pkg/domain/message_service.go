@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/google/uuid"
@@ -8,6 +9,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/net/html"
+	"io"
 	"log"
 	"quill/cmd/main/constants"
 	"strings"
@@ -68,6 +71,7 @@ type mailboxEntry struct {
 	Folder     string    `bson:"folder"`
 	Read       bool      `bson:"read"`
 	ReceivedAt time.Time `bson:"receivedAt"`
+	Category   string    `bson:"category,omitempty"` // Optional category field
 }
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
@@ -139,8 +143,14 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 		},
 	}
 
+	category, err := m.GetCategory(ctx, req)
+	if err != nil {
+		log.Printf("Failed to get category for message: %v", err)
+		return DomainSendResult{}, err
+	}
+
 	allRecipients := append(append(req.To, req.CC...), req.BCC...)
-	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, now)
+	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, category, now)
 	entries = append(entries, newEntries...)
 
 	if len(entries) > 0 {
@@ -553,6 +563,76 @@ func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M
 	}
 }
 
+func (m *MongoMessageService) GetCategory(ctx context.Context, req DomainSendRequest) (string, error) {
+	var htmlContent string
+	for _, content := range req.Body.Content {
+		if content.Type == ContentTypeHTML {
+			htmlContent = content.Value
+			break
+		} else {
+			htmlContent = content.Value
+		}
+	}
+	if htmlContent == "" {
+		return "", errorString("content is empty")
+	}
+	htmlContent, err := ExtractTextStream(strings.NewReader(htmlContent))
+	if err != nil {
+		return "", fmt.Errorf("failed to extract text from HTML: %w", err)
+	}
+	categories := ClassifyEmail(req.Subject, htmlContent)
+	return categories.BestCategory, nil
+}
+
+// ExtractTextStream reads HTML from r and returns all visible text,
+// ignore S3776
+func ExtractTextStream(r io.Reader) (string, error) {
+	z := html.NewTokenizer(r)
+	var buf bytes.Buffer
+	skip := false
+
+	for {
+		tt := z.Next()
+		switch tt {
+		case html.ErrorToken:
+			if z.Err() == io.EOF {
+				// done
+				goto CLEANUP
+			}
+			return "", z.Err()
+
+		case html.StartTagToken:
+			t := z.Token()
+			if t.Data == "script" || t.Data == "style" {
+				skip = true
+			}
+
+		case html.EndTagToken:
+			t := z.Token()
+			if t.Data == "script" || t.Data == "style" {
+				skip = false
+			}
+
+		case html.TextToken:
+			if skip {
+				continue
+			}
+			txt := strings.TrimSpace(string(z.Text()))
+			if txt != "" {
+				buf.WriteString(txt)
+				buf.WriteByte(' ')
+			}
+		default:
+			panic("unhandled default case")
+		}
+	}
+
+CLEANUP:
+	// Normalize whitespace: collapse runs of space to one, trim ends.
+	fields := strings.Fields(buf.String())
+	return strings.Join(fields, " "), nil
+}
+
 // fetchMailboxEntries retrieves mailbox entries with sorting, skip, and limit
 func (m *MongoMessageService) fetchMailboxEntries(ctx context.Context, filter bson.M, offset, limit int) ([]mailboxEntry, error) {
 	findOptions := options.Find().
@@ -753,7 +833,7 @@ func getOrValidateThreadID(threadIDPtr *string) (string, error) {
 }
 
 // Helper to split recipients and build mailbox entries
-func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, now time.Time) (internal []string, external []string, entries []interface{}) {
+func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, category string, now time.Time) (internal []string, external []string, entries []interface{}) {
 	for _, addr := range recipients {
 		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
 			internal = append(internal, addr)
@@ -764,6 +844,7 @@ func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID str
 				Folder:     "inbox",
 				Read:       false,
 				ReceivedAt: now,
+				Category:   category,
 			})
 		} else {
 			external = append(external, addr)

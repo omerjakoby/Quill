@@ -6,7 +6,7 @@
     "time_stamp": "2025-06-17T15:45:12Z",
     "payload": {
         "message_id": "",
-        "from": "bobquillmail.xyz",
+        "from": "bob~quillmail.xyz",
         "to": ["omer~quillmail.xyz"],
         "cc":["carol~quillmail.xyz", "Dave~quillmail.xyz"],
         "bcc": ["eve~quillmail.xyz"],
@@ -19,7 +19,7 @@
                 },
                 {
                     "type": "text/html",
-                    "value": "<p>Hi <strong>Bob</strong>,<br>See below.</p>"
+                    "value": "<p>Click here for a free trial to earn money guaranteed! <strong>Bob</strong>,<br>See below.</p>"
                 }
             ]
         },

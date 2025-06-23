@@ -4,6 +4,8 @@ go 1.24
 
 require (
 	firebase.google.com/go v3.13.0+incompatible
+	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
+	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	go.mongodb.org/mongo-driver v1.17.4
 	google.golang.org/api v0.231.0
@@ -34,7 +36,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
