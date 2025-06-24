@@ -77,13 +77,13 @@ func (p *ProtocolHandler) Handle(conn net.Conn) {
 			// delegate to service layer
 			switch pkt.Type {
 			case PacketTypeSendEmail:
-				resp = p.svc.HandleSend(ctx, pkt)
+				resp = p.svc.HandleSendEmail(ctx, pkt)
 
 			case PacketTypeFetchEmail:
-				resp = p.svc.HandleFetch(ctx, pkt)
+				resp = p.svc.HandleFetchEmail(ctx, pkt)
 
 			case PacketTypeUpdateEmail:
-				resp = p.svc.HandleUpdate(ctx, pkt)
+				resp = p.svc.HandleUpdateEmail(ctx, pkt)
 
 			default:
 				errPkt := buildErrorPacket(ErrorCodeMalformedPacket, "invalid op after auth")
