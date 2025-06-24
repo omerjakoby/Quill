@@ -13,8 +13,8 @@ type Handler interface {
 
 // Server manages the TCP server lifecycle
 type Server struct {
-	addr    string
-	handler Handler
+	addr    string  // network port to listen on
+	handler Handler // the protocol handler to invoke per connection
 }
 
 func NewServer(addr string, handler Handler) *Server {

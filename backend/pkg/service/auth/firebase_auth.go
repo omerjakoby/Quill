@@ -1,9 +1,10 @@
-package quill
+package auth
 
 import (
 	"context"
 	"fmt"
 	"os"
+	quill "quill/pkg/transport/quill"
 	"strings"
 
 	firebase "firebase.google.com/go"
@@ -12,20 +13,13 @@ import (
 	"google.golang.org/api/option"
 )
 
-type AuthService interface {
-	// Validate the incoming token, and return a context carrying the UID
-	Authenticate(ctx context.Context, token string) (context.Context, error)
-}
 
 type firebaseAuthService struct {
 	firebaseAuthClient *auth.Client
 }
 
-type userContextKey struct{}
 
-var userKey = userContextKey{}
-
-func NewFirebaseAuthService(client *auth.Client) AuthService {
+func NewFirebaseAuthService(client *auth.Client) quill.AuthService {
 	return &firebaseAuthService{firebaseAuthClient: client}
 }
 
@@ -49,7 +43,7 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 	return id, ok
 }
 
-func InitAuthService(ctx context.Context, credPath string) (AuthService, error) {
+func InitAuthService(ctx context.Context, credPath string) (quill.AuthService, error) {
 	opt := option.WithCredentialsFile(credPath)
 	app, err := firebase.NewApp(ctx, nil, opt)
 	if err != nil {
@@ -62,7 +56,7 @@ func InitAuthService(ctx context.Context, credPath string) (AuthService, error) 
 	return &firebaseAuthService{firebaseAuthClient: client}, nil
 }
 
-func InitAuthServiceFromEnv(ctx context.Context, envPath string) (AuthService, error) {
+func InitAuthServiceFromEnv(ctx context.Context, envPath string) (quill.AuthService, error) {
 	if err := godotenv.Load(envPath); err != nil {
 		return nil, fmt.Errorf("loading .env: %w", err)
 	}

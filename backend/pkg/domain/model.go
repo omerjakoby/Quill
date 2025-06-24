@@ -1,104 +1,191 @@
+// pkg/domain/model.go
 package domain
 
 import (
 	"time"
 )
 
-// ----- SEND Request and Result -----
+// ------------------ General Domain Types ------------------
 
-// Attachment represents an attachment *after* it's been uploaded to GCS.
-// It will be sent by the client and stored directly in the DB.
-type Attachment struct {
-	Filename string `bson:"filename"` // For MongoDB persistence
-	Mimetype string `bson:"mimetype"` // For MongoDB persistence
-	URL      string `bson:"url"`      // The URL to the GCS object, for MongoDB persistence
+// DomainEmailBody represents plain-text and HTML content of an email.
+type DomainEmailBody struct {
+	Text string // plain-text body
+	HTML string // optional HTML body
 }
 
-// DomainSendRequest is the structure of the incoming email data.
-// Attachments now directly include the GCS URL.
+// DomainAttachment represents a link-only attachment.
+type DomainAttachment struct {
+	Filename string // file name
+	Mimetype string // MIME type
+	Link     string // URL or link to attachment content
+}
+
+// DomainEmailFlags indicates message status flags.
+type DomainEmailFlags struct {
+	HasAttachments bool
+	IsRead         bool
+	IsStarred      bool
+}
+
+// ------------------ SEND Request and Result ------------------
+
+// DomainSendRequest represents the data passed from transport to domain to send an email.
 type DomainSendRequest struct {
-	MessageID   string // Optional, for tracking purposes
-	From        string
-	To          []string
-	CC          []string
-	BCC         []string
-	Subject     string
-	Body        Body
-	Attachments []Attachment // Directly uses the 'Attachment' struct with GCS URL
-	Options     SendOptions
+	MessageID   string             // unique ID for this message (client-generated)
+	ThreadID    *string            // existing thread, or nil to start a new thread
+	From        string             // sender address
+	To          []string           // recipients
+	CC          []string           // carbon-copy recipients
+	BCC         []string           // blind carbon-copy recipients
+	Subject     string             // email subject
+	Body        DomainEmailBody    // text and HTML content
+	Attachments []DomainAttachment // attachments as metadata links
+	Options     DomainSendOptions  // send parameters
 }
 
-// Body holds one or more content parts.
-type Body struct {
-	Content []Content
+// DomainSendOptions holds optional parameters for sending.
+type DomainSendOptions struct {
+	ExpiresInSeconds *int  // TTL for message deletion
+	OneTime          *bool // if true, message is single-read
 }
 
-// Content is a piece of the email body.
-type Content struct {
-	Type  ContentType
-	Value string
-}
-
-type ContentType string
-
-const (
-	ContentTypePlainText ContentType = "text/plain"
-	ContentTypeHTML      ContentType = "text/html"
-)
-
-// SendOptions provides additional parameters for sending.
-type SendOptions struct {
-	ExpiresInSeconds *int
-	OneTime          *bool
-	ThreadID         *string
-}
-
-// DomainSendResult is what's returned after a successful send operation.
+// DomainSendResult is returned after a SEND_EMAIL operation.
 type DomainSendResult struct {
-	MessageID   string
-	ThreadID    string
-	DeliveredTo []string
-	QueuedFor   []string
+	MessageID   string   // echoed back message ID
+	ThreadID    string   // thread into which message was placed
+	DeliveredTo []string // actual recipients who received the message
 }
 
-// ----- FETCH Request and Result -----
+// ------------------ FETCH Request ------------------
 
+// FetchMode indicates overview vs thread fetch modes.
 type FetchMode string
 
 const (
-	FetchModeThread FetchMode = "thread"
-	FetchModeFolder FetchMode = "folder"
+	FetchModeOverview FetchMode = "overview"
+	FetchModeThread   FetchMode = "thread"
 )
 
-// DomainFetchRequest specifies how messages should be fetched.
+// DomainFetchRequest represents the criteria for fetching emails.
 type DomainFetchRequest struct {
-	Mode     FetchMode
-	ThreadID *string
-	Folder   *string
-	Limit    *int
-	Offset   *int
+	Mode     FetchMode           // "overview" or "thread"
+	Folder   *string             // mailbox name for overview mode
+	ThreadID *string             // thread identifier for thread mode
+	Limit    *int                // pagination limit
+	Offset   *int                // pagination offset
+	Filters  *DomainEmailFilters // optional filter criteria
 }
 
-// DomainFetchResult contains the fetched messages and pagination info.
+// DomainEmailFilters groups possible fetch filters.
+type DomainEmailFilters struct {
+	Search    *DomainSearchFilter    // keyword and address search
+	Flags     *DomainFlagFilter      // read/starred/attachment filters
+	DateRange *DomainDateRangeFilter // before/after timestamp filters
+}
+
+// DomainSearchFilter filters by keywords, exact phrases, and addresses.
+type DomainSearchFilter struct {
+	Keywords    []string // keywords to match
+	ExactPhrase string   // exact phrase match
+	From        []string // sender addresses
+	To          []string // recipient addresses
+}
+
+// DomainFlagFilter filters by read status, starred status, and attachments presence.
+type DomainFlagFilter struct {
+	HasAttachments *bool
+	IsRead         *bool
+	IsStarred      *bool
+}
+
+// DomainDateRangeFilter filters by timestamps.
+type DomainDateRangeFilter struct {
+	After  *time.Time // inclusive
+	Before *time.Time // exclusive
+}
+
+// ------------------ FETCH Result ------------------
+
+// DomainFetchResult represents the result of a fetch operation.
 type DomainFetchResult struct {
-	Total    int
-	Limit    int
-	Offset   int
-	Messages []Message
+	// Common pagination fields
+	Limit  int
+	Offset int
+
+	// Overview mode results
+	TotalThreads    int                    // total number of threads
+	ThreadOverviews []DomainThreadOverview // thread summaries
+
+	// Thread mode results
+	TotalMessages int             // total messages in thread
+	Messages      []DomainMessage // full messages in thread
 }
 
-// Message is the full email structure returned during a fetch operation.
-type Message struct {
-	MessageID   string
-	ThreadID    string
-	From        string
-	To          []string
-	CC          []string
-	BCC         []string
-	Subject     string
-	Body        Body
-	Attachments []Attachment // Still uses the Attachment struct with the URL
-	SentAt      time.Time
-	Read        bool
-	Flags       []string
+// DomainThreadOverview summarizes the latest message in a thread.
+type DomainThreadOverview struct {
+	ThreadID      string               // thread identifier
+	LatestMessage DomainMessageSummary // summary of most recent message
+	Count         int                  // total messages in thread
+	UnreadCount   int                  // unread message count
+}
+
+// DomainMessageSummary holds brief info about a single message.
+type DomainMessageSummary struct {
+	ID        string           // message ID
+	ThreadID  string           // thread ID
+	From      string           // sender
+	Subject   string           // message subject
+	Timestamp time.Time        // when sent
+	Snippet   string           // short excerpt of body
+	Flags     DomainEmailFlags // read/starred/attachment flags
+}
+
+// DomainMessage is the full message data returned in thread mode.
+type DomainMessage struct {
+	ID          string             // message ID
+	ThreadID    string             // thread ID
+	From        string             // sender
+	To          []string           // recipients
+	CC          []string           // CC
+	BCC         []string           // BCC
+	Subject     string             // subject
+	Body        DomainEmailBody    // text/HTML content
+	Attachments []DomainAttachment // attachments metadata
+	Timestamp   time.Time          // when sent
+	Flags       DomainEmailFlags   // read/starred/attachment flags
+}
+
+// ------------------ UPDATE Request and Result ------------------
+
+// DomainUpdateRequest represents changes to apply to messages.
+type DomainUpdateRequest struct {
+	MessageIDs []string          // messages to update
+	Folder     *string           // move to folder
+	Category   *string           // e.g. label or category
+	Flags      DomainUpdateFlags // flag changes
+}
+
+// DomainUpdateFlags holds optional flag updates.
+type DomainUpdateFlags struct {
+	IsRead    *bool
+	IsStarred *bool
+	IsDeleted *bool
+}
+
+// DomainUpdateResult represents the outcome of an update operation.
+type DomainUpdateResult struct {
+	Results []DomainUpdateResultItem // per-message results
+}
+
+// DomainUpdateResultItem holds the result for one message.
+type DomainUpdateResultItem struct {
+	MessageID string       // the message ID
+	Status    string       // "OK" or "ERROR"
+	Error     *DomainError // error details if Status is "ERROR"
+}
+
+// DomainError describes an error that occurred on an operation.
+type DomainError struct {
+	Code    string // error code (e.g. THREAD_NOT_FOUND)
+	Message string // human-readable message
 }
