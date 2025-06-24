@@ -8,12 +8,16 @@ import (
 
 // authService authenticates tokens and returns a context enriched with identity.
 type AuthService interface {
-    Authenticate(ctx context.Context, token string) (context.Context, error)
+	Authenticate(ctx context.Context, token string) (context.Context, error)
 }
 
 // EmailService handles core email-domain operations: send, fetch, update.
 type EmailService interface {
-    Send(ctx context.Context, req domain.DomainSendRequest) (domain.DomainSendResult, error)
-    Fetch(ctx context.Context, req domain.DomainFetchRequest) (domain.DomainFetchResult, error)
-    Update(ctx context.Context, req domain.DomainUpdateRequest) (domain.DomainUpdateResult, error)
+	SendEmail(ctx context.Context, req domain.SendEmailRequest) (domain.SendEmailResult, error)
+	FetchEmail(ctx context.Context, req domain.FetchEmailRequest) (domain.FetchEmailResult, error)
+	UpdateEmail(ctx context.Context, req domain.UpdateEmailRequest) (domain.UpdateEmailResult, error)
+}
+
+type KeyService interface {
+	FetchKeys(ctx context.Context, req domain.FetchKeysRequest) (domain.FetchKeysResult, error)
 }
