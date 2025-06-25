@@ -7,14 +7,9 @@ type FetchKeysRequest struct {
 	Query string // user identity or domain
 }
 
-// FetchKeyEntry is one public-key record.
-type FetchKeyEntry struct {
+// FetchKeysResult holds a key entries.
+type FetchKeysResult struct {
 	Identity  string    // e.g. "alice~quillmail.com"
 	PublicKey string    // base64 or PEM-encoded
 	Expires   time.Time // expiration
-}
-
-// FetchKeysResult holds zero or more key entries.
-type FetchKeysResult struct {
-	Keys []FetchKeyEntry
 }
