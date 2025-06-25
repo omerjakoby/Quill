@@ -1,5 +1,4 @@
 // frontend/src/components/Content.tsx
-
 import React from 'react';
 import { MessageOverview } from '../types/quill'; // Import the type for a message overview
 

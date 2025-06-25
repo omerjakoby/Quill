@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { MessageOverview, FetchResponsePacket , FetchResponseSuccessPayload,FetchResponseErrorPayload} from '../types/quill'; // Types for your protocol
 import { User } from 'firebase/auth'; // Type for Firebase user
 import '../css/MailBox.css'; // Your CSS for styling this view
-import '../css/Unread.css'; // Specific styles for the Unread component
+
 import Content from './Content'; // The component that will display the email's content
 
 interface UnreadProps {
@@ -164,7 +164,7 @@ const Unread: React.FC<UnreadProps> = ({ user }) => {
         {messages.map(message => (
           <button
             key={message.id}
-            className={`message-item-unread ${selectedMessage?.id === message.id ? 'selected' : ''}`}
+            className={`message-item ${selectedMessage?.id === message.id ? 'selected' : ''}`}
             onClick={() => handleMessageClick(message)}
             type="button"
             tabIndex={0} // Added tabIndex for accessibility
@@ -188,7 +188,7 @@ const Unread: React.FC<UnreadProps> = ({ user }) => {
   );
 
   return (
-    <div className="unread-view-layout">
+    <div className="view-layout">
         <div className="message-list-panel">
             {messageListContent}
         </div>

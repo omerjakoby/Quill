@@ -24,6 +24,5 @@
 
 .content-area {
   flex-grow: 1;      /* --- THIS IS THE OTHER KEY PIECE OF MAGIC --- */     /* Give the content some internal spacing */
-  overflow-y: auto;  /* If content is too long, ONLY this area will scroll */
-  border-radius: 0.5rem; /* Optional: adds rounded corners to the content area */
+  overflow-y:scroll;  /* If content is too long, ONLY this area will scroll */
 }
