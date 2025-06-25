@@ -14,9 +14,11 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"quill/cmd/main/constants"
 	"quill/pkg/db"
 	"quill/pkg/domain"
 	"quill/pkg/models"
+	"quill/pkg/service/auth"
 	"quill/pkg/transport/quill"
 )
 
@@ -32,27 +34,29 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Initialize services and databases
-	authSvc, mongoDB, msgSvc := initializeServices()
+	//TODO OMER read the todo in line 48 and fix
+	authSvc, mongoDB, emailSvc, keySvc := initializeServices()
 
 	// Configure and start servers
-	quillServer := setupQuillServer(ctx, cancel, authSvc, msgSvc)
+	quillServer := setupQuillServer(ctx, cancel, authSvc, emailSvc, keySvc)
 	httpServer := setupHTTPServer(ctx, cancel, mongoDB, authSvc)
 
 	// Wait for shutdown signal
 	waitForShutdown(ctx, sigChan, httpServer, quillServer)
 }
 
+//TODO OMER: create the struct and implement for emailSvc and keySvc then init them here
 // initializeServices sets up the authentication service and database connections
-func initializeServices() (quill.AuthService, *db.MongoDB, domain.MessageService) {
+func initializeServices() (auth.AuthService, *db.MongoDB, ??new emailSvc type, ???new keySvc type) {
 	// Auth Service initialization
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer authSvcCancel()
 
-	authSvc, err := quill.InitAuthServiceFromEnv(authSvcCtx, "../.env")
+	authSvc, err := auth.InitAuthServiceFromEnv(authSvcCtx, "../.env")
 	if err != nil {
 		log.Fatalf("auth init failed: %v", err)
 	}
-
+	
 	// MongoDB initialization
 	mongoDB := initializeMongoDB()
 
@@ -60,7 +64,7 @@ func initializeServices() (quill.AuthService, *db.MongoDB, domain.MessageService
 	msgSvc := domain.NewMongoMessageService(mongoDB.GetDatabase())
 	log.Println("Created MongoDB-backed message service")
 
-	return authSvc, mongoDB, msgSvc
+	return authSvc, mongoDB, emailSvc, keySvc
 }
 
 // initializeMongoDB connects to MongoDB and ensures indexes
@@ -106,14 +110,15 @@ func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 }
 
 // setupQuillServer configures and starts the Quill protocol server
-func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, msgSvc domain.MessageService) *quill.Server {
-	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)
-	quillServerAddr := "localhost:9876"
-	quillServer := quill.NewServer(quillServerAddr, messageHandler)
+func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc ???, keySvc ???) *quill.Server {
+	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc)
+	protocolHandler := quill.NewProtocolHandler(ServiceHandler)
+
+	quillServer := quill.NewServer(constants.QuillServerAddr, protocolHandler)
 
 	// Start Quill Server in a goroutine
 	go func() {
-		log.Printf("INFO: starting Quill protocol TLS server on %s", quillServerAddr)
+		log.Printf("INFO: starting Quill protocol TLS server on %s", constants.QuillServerAddr)
 		if err := quillServer.StartTLS("../certificate/quill.crt", "../certificate/quill.key"); err != nil {
 			log.Printf("FATAL: Quill server failed: %v", err)
 			cancel() // Signal main to shut down
