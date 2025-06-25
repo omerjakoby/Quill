@@ -1,4 +1,3 @@
-// pkg/transport/quill/constants.go
 package quill
 
 // Protocol identification
@@ -34,6 +33,7 @@ const (
 const (
 	// 1. General & Protocol Errors
 	ErrorCodeMalformedPacket     = "MALFORMED_PACKET"
+	ErrorCodeInvalidPayload      = "INVALID_PAYLOAD"
 	ErrorCodeInvalidTimestamp    = "INVALID_TIMESTAMP"
 	ErrorCodeRateLimited         = "RATE_LIMITED"
 	ErrorCodeTooManyConnections  = "TOO_MANY_CONNECTIONS"

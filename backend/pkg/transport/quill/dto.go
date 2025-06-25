@@ -1,4 +1,3 @@
-// pkg/transport/quill/dto.go
 package quill
 
 import "encoding/json"
@@ -165,8 +164,8 @@ type FetchEmailPayload struct {
 	Mode     string        `json:"mode"`
 	Folder   string        `json:"folder,omitempty"`
 	ThreadID string        `json:"thread_id,omitempty"`
-	Limit    int           `json:"limit,omitempty"`
-	Offset   int           `json:"offset,omitempty"`
+	Limit    int           `json:"limit"`
+	Offset   int           `json:"offset"`
 	Filters  *EmailFilters `json:"filters,omitempty"`
 }
 

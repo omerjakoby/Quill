@@ -703,6 +703,7 @@ This section details the standardized error codes for the Quill protocol. All er
 *These errors can occur at any stage of the connection.*
 
 *   `MALFORMED_PACKET`: The received packet could not be parsed. This could be due to an invalid length prefix, non-compliant JSON, or missing required top-level fields (`type`, `timestamp`, `payload`).
+*   `INVALID_PAYLOAD`: The received packet payload could not be parsed.
 *   `INVALID_TIMESTAMP`: The `timestamp` field is outside the acceptable ±60-second skew, or its format is invalid.
 *   `RATE_LIMITED`: The client or server has exceeded the allowed number of requests in a given time frame. The `retry_after` field SHOULD be included.
 *   `TOO_MANY_CONNECTIONS`: The server is unable to accept new connections from the client's IP address or identity.

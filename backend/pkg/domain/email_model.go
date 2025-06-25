@@ -1,4 +1,3 @@
-// pkg/domain/model.go
 package domain
 
 import (
