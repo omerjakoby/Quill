@@ -17,6 +17,7 @@ import (
 	"quill/pkg/db"
 	"quill/pkg/domain"
 	"quill/pkg/models"
+	"quill/pkg/service/auth"
 	"quill/pkg/transport/quill"
 )
 
@@ -35,8 +36,7 @@ func main() {
 	// Auth Service needs its own context for initialization which might be short-lived
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer authSvcCancel()
-
-	authSvc, err := quill.InitAuthServiceFromEnv(authSvcCtx, "../.env") // Pass context
+	authSvc, err := auth.InitAuthServiceFromEnv(authSvcCtx, "../.env") // Pass context
 	if err != nil {
 		log.Fatalf("auth init failed: %v", err)
 	}
@@ -77,7 +77,7 @@ func main() {
 
 	msgSvc := domain.NewMongoMessageService(mongoDB.GetDatabase())
 	log.Println("Created MongoDB-backed message service")
-
+	
 	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)
 
 	quillServerAddr := "localhost:9876"
