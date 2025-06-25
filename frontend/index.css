@@ -3,7 +3,7 @@
 html,
 body,
 #root {
-  height: 100%; /* Keep this */
+  height: 100vh; /* Keep this */
   width: 100%;  /* Keep this */
   margin: 0;    /* Keep this */
   padding: 0;   /* Keep this */
@@ -22,3 +22,15 @@ body,
     background-color: #f9f9f9;
   }
 }
+/*@media (prefers-color-scheme: dark) {
+  :root {
+    color: #ffffff;
+    background-color: #3b3a3a;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}*/

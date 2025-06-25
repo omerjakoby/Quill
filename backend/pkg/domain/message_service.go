@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/google/uuid"
@@ -8,6 +9,8 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"golang.org/x/net/html"
+	"io"
 	"log"
 	"quill/cmd/main/constants"
 	"strings"
@@ -68,17 +71,31 @@ type mailboxEntry struct {
 	Folder     string    `bson:"folder"`
 	Read       bool      `bson:"read"`
 	ReceivedAt time.Time `bson:"receivedAt"`
+	Category   string    `bson:"category,omitempty"` // Optional category field
 }
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
 func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
-	if extractDomain(req.From) == constants.DOMAIN_NAME {
-		return m.SendInternal(ctx, req)
+	// Validate the request
+	if validateQuillMailFormat(req.From) {
+		if extractDomain(req.From) == constants.DOMAIN_NAME {
+			return m.SendInternal(ctx, req)
+		}
+		return m.SendExternal(ctx, req)
 	}
-	return m.SendExternal(ctx, req)
+	return DomainSendResult{}, errorString("invalid sender address format")
+
 }
 
 func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+
+	// Validate recipient address format
+	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
+		if !validateQuillMailFormat(addr) {
+			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+		}
+	}
+
 	messageID, err := getOrValidateMessageID(req.MessageID)
 	if err != nil {
 		return DomainSendResult{}, err
@@ -126,8 +143,14 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 		},
 	}
 
+	category, err := m.GetCategory(ctx, req)
+	if err != nil {
+		log.Printf("Failed to get category for message: %v", err)
+		return DomainSendResult{}, err
+	}
+
 	allRecipients := append(append(req.To, req.CC...), req.BCC...)
-	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, now)
+	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, category, now)
 	entries = append(entries, newEntries...)
 
 	if len(entries) > 0 {
@@ -154,6 +177,12 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	messageID, err := validateMessageID(req.MessageID)
 	if err != nil {
 		return DomainSendResult{}, err
+	}
+
+	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
+		if !validateQuillMailFormat(addr) {
+			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+		}
 	}
 
 	// Check for existing message
@@ -190,9 +219,15 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 		return DomainSendResult{}, err
 	}
 
+	category, err := m.GetCategory(ctx, req)
+	if err != nil {
+		log.Printf("Failed to get category for message: %v", err)
+		return DomainSendResult{}, err
+	}
+
 	// Create mailbox entries for all internal recipients
 	myRecipients := getInternalRecipients(req, constants.DOMAIN_NAME)
-	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, now)
+	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, category, now)
 	if len(mailboxEntries) > 0 {
 		_, err = m.db.Collection("mailboxes").InsertMany(ctx, mailboxEntries)
 		if err != nil {
@@ -258,7 +293,7 @@ func getInternalRecipients(req DomainSendRequest, domain string) []string {
 }
 
 // Helper to create mailbox entries
-func createMailboxEntries(recipients []string, messageID, threadID string, now time.Time) []interface{} {
+func createMailboxEntries(recipients []string, messageID, threadID string, category string, now time.Time) []interface{} {
 	var entries []interface{}
 	for _, recipient := range recipients {
 		entries = append(entries, mailboxEntry{
@@ -268,6 +303,7 @@ func createMailboxEntries(recipients []string, messageID, threadID string, now t
 			Folder:     "inbox",
 			Read:       false,
 			ReceivedAt: now,
+			Category:   category,
 		})
 	}
 	return entries
@@ -275,6 +311,177 @@ func createMailboxEntries(recipients []string, messageID, threadID string, now t
 
 // Fetch retrieves messages based on the provided request
 func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeFolder && req.Folder == nil) {
+		return DomainFetchResult{}, errorString("missing required parameters for fetch mode")
+	} else if req.Mode != FetchModeThread && req.Mode != FetchModeFolder {
+		return DomainFetchResult{}, errorString("invalid fetch mode")
+	} else if req.Mode == FetchModeFolder {
+		return m.FetchFolder(ctx, req)
+	} else if req.Mode == FetchModeThread {
+		return m.FetchThread(ctx, req)
+	}
+	return DomainFetchResult{}, errorString("unsupported fetch mode")
+}
+
+func (m *MongoMessageService) FetchThread(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+	userID, ok := ctx.Value("userID").(string)
+	if !ok {
+		return DomainFetchResult{}, ErrUserNotAuthenticated
+	}
+
+	if req.ThreadID == nil {
+		return DomainFetchResult{}, errorString("thread ID is required for thread mode")
+	}
+
+	quillmail, err := m.getUserQuillMail(ctx, userID)
+	if err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	limit := 10
+	if req.Limit != nil {
+		limit = *req.Limit
+	}
+	offset := 0
+	if req.Offset != nil {
+		offset = *req.Offset
+	}
+
+	// Check if the user has access to the thread
+	if err := m.checkThreadAccess(ctx, req, userID, quillmail); err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	// Get all messages in the thread
+	rawMessages, total, err := m.fetchThreadMessages(ctx, *req.ThreadID, offset, limit)
+	if err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	if len(rawMessages) == 0 {
+		return DomainFetchResult{
+			Total:    int(total),
+			Limit:    limit,
+			Offset:   offset,
+			Messages: []Message{},
+		}, nil
+	}
+
+	messageIDs := extractMessageIDsFromRaw(rawMessages)
+	readStatusMap, err := m.fetchReadStatusMap(ctx, quillmail, messageIDs)
+	if err != nil {
+		return DomainFetchResult{}, err
+	}
+
+	messages := mapRawMessagesToDomain(rawMessages, readStatusMap)
+
+	return DomainFetchResult{
+		Total:    int(total),
+		Limit:    limit,
+		Offset:   offset,
+		Messages: messages,
+	}, nil
+}
+
+// Helper: Check if user has access to the thread
+func (m *MongoMessageService) checkThreadAccess(ctx context.Context, req DomainFetchRequest, userID, quillmail string) error {
+	mailboxFilter := buildMailboxFilter(req, userID, quillmail)
+	count, err := m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		// Also check with the quillmail address
+		mailboxFilter = bson.M{
+			"userId":   quillmail,
+			"threadID": *req.ThreadID,
+		}
+		count, err = m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return errorString("thread not found or access denied")
+		}
+	}
+	return nil
+}
+
+// Helper: Fetch messages in the thread with pagination
+func (m *MongoMessageService) fetchThreadMessages(ctx context.Context, threadID string, offset, limit int) ([]bson.M, int64, error) {
+	messageFilter := bson.M{
+		"options.threadID": threadID,
+	}
+	total, err := m.db.Collection("messages").CountDocuments(ctx, messageFilter)
+	if err != nil {
+		return nil, 0, err
+	}
+	findOptions := options.Find().
+		SetSort(bson.D{{Key: "sentAt", Value: -1}}).
+		SetSkip(int64(offset)).
+		SetLimit(int64(limit))
+	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter, findOptions)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() {
+		_ = messageCursor.Close(ctx)
+	}()
+	var rawMessages []bson.M
+	if err = messageCursor.All(ctx, &rawMessages); err != nil {
+		return nil, 0, err
+	}
+	return rawMessages, total, nil
+}
+
+// Helper: Extract message IDs from raw messages
+func extractMessageIDsFromRaw(rawMessages []bson.M) []string {
+	var messageIDs []string
+	for _, msg := range rawMessages {
+		if msgID, ok := msg["messageId"].(string); ok {
+			messageIDs = append(messageIDs, msgID)
+		}
+	}
+	return messageIDs
+}
+
+// Helper: Fetch read status map for messages
+func (m *MongoMessageService) fetchReadStatusMap(ctx context.Context, quillmail string, messageIDs []string) (map[string]bool, error) {
+	readStatusFilter := bson.M{
+		"userId":    quillmail,
+		"messageId": bson.M{"$in": messageIDs},
+	}
+	readStatusCursor, err := m.db.Collection("mailboxes").Find(ctx, readStatusFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = readStatusCursor.Close(ctx)
+	}()
+	readStatusMap := make(map[string]bool)
+	var mailboxEntries []mailboxEntry
+	if err = readStatusCursor.All(ctx, &mailboxEntries); err != nil {
+		return nil, err
+	}
+	for _, entry := range mailboxEntries {
+		readStatusMap[entry.MessageID] = entry.Read
+	}
+	return readStatusMap, nil
+}
+
+// Helper: Map raw messages to domain messages with read status
+func mapRawMessagesToDomain(rawMessages []bson.M, readStatusMap map[string]bool) []Message {
+	var messages []Message
+	for _, rawMsg := range rawMessages {
+		msgID, _ := rawMsg["messageId"].(string)
+		read := readStatusMap[msgID] // false if not found in map
+		message := convertBsonToMessage(rawMsg, read)
+		messages = append(messages, message)
+	}
+	return messages
+}
+
+func (m *MongoMessageService) FetchFolder(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
 	userID, ok := ctx.Value("userID").(string)
 	if !ok {
 		return DomainFetchResult{}, ErrUserNotAuthenticated
@@ -348,8 +555,8 @@ func (m *MongoMessageService) getUserQuillMail(ctx context.Context, userID strin
 func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M {
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		return bson.M{
-			"userId":           userID,
-			"options.threadID": *req.ThreadID,
+			"userId":   quillmail,
+			"threadId": *req.ThreadID,
 		}
 	} else if req.Mode == FetchModeFolder && req.Folder != nil {
 		return bson.M{
@@ -361,6 +568,78 @@ func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M
 		"userId": userID,
 		"folder": "inbox",
 	}
+}
+
+func (m *MongoMessageService) GetCategory(ctx context.Context, req DomainSendRequest) (string, error) {
+	var htmlContent string
+	for _, content := range req.Body.Content {
+		if content.Type == ContentTypeHTML {
+			htmlContent = content.Value
+			break
+		} else {
+			htmlContent = content.Value
+		}
+	}
+	if htmlContent == "" {
+		return "", errorString("content is empty")
+	}
+	htmlContent, err := ExtractTextStream(strings.NewReader(htmlContent))
+	if err != nil {
+		return "", fmt.Errorf("failed to extract text from HTML: %w", err)
+	}
+	categories := ClassifyEmail(req.Subject, htmlContent)
+	return categories.BestCategory, nil
+}
+
+// ExtractTextStream reads HTML from r and returns all visible text,
+// ignore S3776
+func ExtractTextStream(r io.Reader) (string, error) {
+	z := html.NewTokenizer(r)
+	var buf bytes.Buffer
+	skip := false
+
+	for {
+		tt := z.Next()
+		switch tt {
+		case html.ErrorToken:
+			if z.Err() == io.EOF {
+				// done
+				goto CLEANUP
+			}
+			return "", z.Err()
+
+		case html.StartTagToken:
+			t := z.Token()
+			if t.Data == "script" || t.Data == "style" {
+				skip = true
+			}
+
+		case html.EndTagToken:
+			t := z.Token()
+			if t.Data == "script" || t.Data == "style" {
+				skip = false
+			}
+
+		case html.TextToken:
+			if skip {
+				continue
+			}
+			txt := strings.TrimSpace(string(z.Text()))
+			if txt != "" {
+				buf.WriteString(txt)
+				buf.WriteByte(' ')
+			}
+
+		default:
+			// Ignore other token types, do nothing
+
+		}
+	}
+
+CLEANUP:
+	// Normalize whitespace: collapse runs of space to one, trim ends.
+	fields := strings.Fields(buf.String())
+	return strings.Join(fields, " "), nil
 }
 
 // fetchMailboxEntries retrieves mailbox entries with sorting, skip, and limit
@@ -456,8 +735,8 @@ func getStringFromBson(bsonMsg bson.M, key string) string {
 }
 
 func getThreadIDFromBson(bsonMsg bson.M) string {
-	if options, ok := bsonMsg["options"].(bson.M); ok {
-		if threadID, ok := options["threadID"].(string); ok {
+	if opts, ok := bsonMsg["options"].(bson.M); ok {
+		if threadID, ok := opts["threadID"].(string); ok {
 			return threadID
 		}
 	}
@@ -509,8 +788,8 @@ func parseContentItem(c interface{}) *Content {
 		return nil
 	}
 	var contentItem Content
-	if t, ok := contentMap["type"].(ContentType); ok {
-		contentItem.Type = t
+	if t, ok := contentMap["type"].(string); ok {
+		contentItem.Type = ContentType(t)
 	}
 	if v, ok := contentMap["value"].(string); ok {
 		contentItem.Value = v
@@ -563,7 +842,7 @@ func getOrValidateThreadID(threadIDPtr *string) (string, error) {
 }
 
 // Helper to split recipients and build mailbox entries
-func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, now time.Time) (internal []string, external []string, entries []interface{}) {
+func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, category string, now time.Time) (internal []string, external []string, entries []interface{}) {
 	for _, addr := range recipients {
 		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
 			internal = append(internal, addr)
@@ -574,10 +853,22 @@ func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID str
 				Folder:     "inbox",
 				Read:       false,
 				ReceivedAt: now,
+				Category:   category,
 			})
 		} else {
 			external = append(external, addr)
 		}
 	}
 	return
+}
+
+// validateQuillMailFormat checks if the input matches the format (username)~(mail.com)
+func validateQuillMailFormat(input string) bool {
+	parts := strings.Split(input, "~")
+	if len(parts) != 2 {
+		return false
+	}
+	username := parts[0]
+	domain := parts[1]
+	return username != "" && domain != "" && strings.Contains(domain, ".")
 }
