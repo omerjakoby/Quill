@@ -8,7 +8,7 @@ import (
 
 // Handler defines the interface for handling a single connection's lifecycle
 type Handler interface {
-	Handle(conn net.Conn)
+	Serve(conn net.Conn)
 }
 
 // Server manages the TCP server lifecycle
@@ -41,7 +41,7 @@ func (s *Server) Start() error {
 			continue
 		}
 
-		go s.handler.Handle(conn)
+		go s.handler.Serve(conn)
 	}
 }
 
@@ -76,6 +76,6 @@ func (s *Server) StartTLS(certFile, keyFile string) error {
 			log.Printf("ERROR: could not accept TLS connection: %v", err)
 			continue
 		}
-		go s.handler.Handle(conn)
+		go s.handler.Serve(conn)
 	}
 }
