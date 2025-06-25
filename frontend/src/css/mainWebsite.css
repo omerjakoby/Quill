@@ -6,6 +6,8 @@
 }
 .top-bar-container {
   flex-shrink: 0; /* Prevents the top bar from shrinking if content is too large */
+  box-shadow:0.5rem -0.25rem 0.5rem -0.25rem #cfc8c8;
+
 }
 .content-container {
   margin-top: 7rem;  

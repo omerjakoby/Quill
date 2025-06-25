@@ -28,7 +28,7 @@ function MainWebsite({ user, handleSignOut }: Readonly<MainWebsiteProps>) {
           <Routes>
             <Route path="/" element={<Inbox user={user}/>} />
             <Route path="/Compose" element={<Compose />} />
-            <Route path="/Unread" element={<Unread />} />
+            <Route path="/Unread" element={<Unread user={user} />} />
             <Route path="/Inbox" element={<Inbox user={user}/>} />
             <Route path="/Sent" element={<Sent />} />
           </Routes>

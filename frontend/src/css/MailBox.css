@@ -1,24 +1,28 @@
 .inbox-view {
   display: flex;
   flex-direction: row;
-  height: calc(100vh - 8rem); /* Full height of the viewport */
+  height: calc(100vh - 6rem); /* Full height of the viewport */
   overflow: hidden; /* prevent scroll leaking */
-  border-radius: 2rem;
-
 }
-.message-list {
+.message-list-inbox {
   width: 30%;
   padding: 1.2rem;
   overflow-y: auto;
   border-right: 1px solid #ccc;
+  display: flex;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  position: relative; /* For dot positioning */
+  background-color: #ffffff; /* Default background */
+  flex-direction: column; /* Stack messages vertically */
 }
-.mail-content-conntainer {
+.mail-content-container {
   width: 80%;
   padding: 1rem;
   overflow-y: auto;
 }
 .message-item {
-  padding: 0.5rem;
+  padding: 2rem;
   border-bottom: 1px solid #ccc;
   cursor: pointer;
 }
@@ -42,3 +46,5 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #555; /* On hover */
 }
+/* frontend/src/css/MailBox.css */
+

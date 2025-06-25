@@ -67,7 +67,7 @@
 }
 .sidebar{
     height: 100%;
-    transition: width 0.2s ease-in-out;
+    transition: width 0.1s ease-in-out;
     display: flex;
     flex-direction: column;
 }

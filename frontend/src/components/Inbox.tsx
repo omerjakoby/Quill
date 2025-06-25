@@ -1,10 +1,8 @@
 // frontend/src/components/Inbox.tsx
-
 import React, { useState, useEffect } from 'react';
 import { MessageOverview, FetchResponsePacket , FetchResponseSuccessPayload,FetchResponseErrorPayload} from '../types/quill'; // Import your Quill Protocol types
 import { User } from 'firebase/auth'; // Still need User for InboxProps
 import '../css/MailBox.css'; // Import your CSS for styling the inbox
-import Content from './Content'; // Import Content component for displaying mail content
 
 // Define payload types if not already imported
 
@@ -150,7 +148,7 @@ const mockFetchResponseJson = `
           ]
         },
         "timestamp": "2025-06-21T18:25:16.156+03:00",
-        "read": false
+        "read": true
       },
       {
         "id": "fa03a122-9c67-44ed-91be-c8c5d52362e9",
@@ -166,7 +164,7 @@ const mockFetchResponseJson = `
           ]
         },
         "timestamp": "2025-06-21T18:25:16.156+03:00",
-        "read": false
+        "read": true
       },
       {
         "id": "fa03a122-9c67-44ed-91be-c8c5d52362e4",
@@ -182,14 +180,30 @@ const mockFetchResponseJson = `
           ]
         },
         "timestamp": "2025-06-21T18:25:16.156+03:00",
-        "read": false
+        "read": true
       }
     ],
     "total": 10,
     "limit": 20
   }
-}
-`;
+}`;
+
+const mockFetchResponseJsonEmpty=`
+{
+  "protocol": "quill",
+  "version": "1.0",
+  "type": "FETCH_RESPONSE",
+  "timestamp": "2025-06-24T10:30:00Z",
+  "payload": {
+    "status": "OK",
+    "mode": "folder",
+    "messages": [],  // <-- THIS IS THE KEY PART: an empty array
+    "total": 0,      // <-- And ideally, total should also be 0
+    "limit": 20,
+    "offset": 0
+  }
+}`;
+
 
 const Inbox: React.FC<InboxProps> = ({ user }) => {
   const [messages, setMessages] = useState<MessageOverview[]>([]);
@@ -244,23 +258,19 @@ const Inbox: React.FC<InboxProps> = ({ user }) => {
 
   return (
     <div className="inbox-view">
-      <div className="message-list">
+      <div className="message-list-inbox">
         {messages.map(message => (
           <div key={message.id} className="message-item">
             <h3 className="message-subject">{message.subject}</h3>
             <p className="message-from">From: {message.from}</p>
-            <p className="message-snippet">{message.body.content[0]?.value || 'No snippet available'}</p>
             <span className="message-timestamp">
               {new Date(message.timestamp).toLocaleString()}
             </span>
             <span className="message-read-status">
-              {message.read ? 'Read' : 'Unread'}
+              {message.read ? '  Read' : '  Unread'}
             </span>
           </div>
         ))}
-      </div>
-      <div className='mail-content-conntainer'>
-        <Content/>
       </div>
     </div>
   );
