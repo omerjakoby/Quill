@@ -14,6 +14,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"quill/cmd/main/constants"
 	"quill/pkg/db"
 	"quill/pkg/domain"
 	"quill/pkg/models"
@@ -32,15 +33,42 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// --- Existing Quill Server Setup ---
-	// Auth Service needs its own context for initialization which might be short-lived
+	// Initialize services and databases
+	//TODO OMER read the todo in line 48 and fix
+	authSvc, mongoDB, emailSvc, keySvc := initializeServices()
+
+	// Configure and start servers
+	quillServer := setupQuillServer(ctx, cancel, authSvc, emailSvc, keySvc)
+	httpServer := setupHTTPServer(ctx, cancel, mongoDB, authSvc)
+
+	// Wait for shutdown signal
+	waitForShutdown(ctx, sigChan, httpServer, quillServer)
+}
+
+//TODO OMER: create the struct and implement for emailSvc and keySvc then init them here
+// initializeServices sets up the authentication service and database connections
+func initializeServices() (auth.AuthService, *db.MongoDB, ??new emailSvc type, ???new keySvc type) {
+	// Auth Service initialization
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer authSvcCancel()
-	authSvc, err := auth.InitAuthServiceFromEnv(authSvcCtx, "../.env") // Pass context
+
+	authSvc, err := auth.InitAuthServiceFromEnv(authSvcCtx, "../.env")
 	if err != nil {
 		log.Fatalf("auth init failed: %v", err)
 	}
+	
+	// MongoDB initialization
+	mongoDB := initializeMongoDB()
 
+	// Message service initialization
+	msgSvc := domain.NewMongoMessageService(mongoDB.GetDatabase())
+	log.Println("Created MongoDB-backed message service")
+
+	return authSvc, mongoDB, emailSvc, keySvc
+}
+
+// initializeMongoDB connects to MongoDB and ensures indexes
+func initializeMongoDB() *db.MongoDB {
 	mongoURI := getEnvWithDefault("MONGODB_URI", "mongodb://localhost:27017")
 	mongoPassword := getEnvWithDefault("mongodb_password", "")
 	mongoDatabase := getEnvWithDefault("MONGODB_DATABASE", "quill")
@@ -63,50 +91,96 @@ func main() {
 	}
 	log.Println("Connected to MongoDB successfully")
 
-	// === PLACE THE INDEX CREATION HERE ===
-	// Use the main application context (ctx) or a dedicated context with appropriate timeout
-	// for the index creation. The main context is fine here as it's long-lived.
+	// Create indexes
+	ensureMongoDBIndexes(mongoDB)
+
+	return mongoDB
+}
+
+// ensureMongoDBIndexes creates necessary database indexes
+func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 	log.Println("Ensuring MongoDB unique user indexes...")
-	indexCtx, indexCancel := context.WithTimeout(context.Background(), 30*time.Second) // Give it more time if indexes are large
+	indexCtx, indexCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer indexCancel()
+
 	if err := mongoDB.EnsureUniqueUserIndexes(indexCtx); err != nil {
 		log.Fatalf("Failed to ensure unique user indexes: %v", err)
 	}
 	log.Println("MongoDB unique user indexes ensured successfully.")
-	// ======================================
+}
 
-	msgSvc := domain.NewMongoMessageService(mongoDB.GetDatabase())
-	log.Println("Created MongoDB-backed message service")
-	
-	messageHandler := quill.NewMessageHandler(authSvc, msgSvc)
+// setupQuillServer configures and starts the Quill protocol server
+func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc ???, keySvc ???) *quill.Server {
+	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc)
+	protocolHandler := quill.NewProtocolHandler(ServiceHandler)
 
-	quillServerAddr := "localhost:9876"
-	quillServer := quill.NewServer(quillServerAddr, messageHandler)
+	quillServer := quill.NewServer(constants.QuillServerAddr, protocolHandler)
 
-	// --- Start Quill Server in a Goroutine ---
+	// Start Quill Server in a goroutine
 	go func() {
-		log.Printf("INFO: starting Quill protocol TLS server on %s", quillServerAddr)
-		// Assuming quill.Server has a StartTLS method. You might want to pass the context
-		// to it if you want to cleanly shut it down.
+		log.Printf("INFO: starting Quill protocol TLS server on %s", constants.QuillServerAddr)
 		if err := quillServer.StartTLS("../certificate/quill.crt", "../certificate/quill.key"); err != nil {
-			// Don't use log.Fatalf here, as it exits the whole program.
-			// Instead, log the error and signal main to shut down.
 			log.Printf("FATAL: Quill server failed: %v", err)
 			cancel() // Signal main to shut down
 		}
 	}()
 
-	// --- Add HTTP Server Setup ---
+	return quillServer
+}
+
+// setupHTTPServer configures and starts the HTTP server
+func setupHTTPServer(ctx context.Context, cancel context.CancelFunc, mongoDB *db.MongoDB, authSvc quill.AuthService) *http.Server {
 	httpServerAddr := "localhost:8080"
 	httpMux := http.NewServeMux()
-	httpMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+	// Register handlers
+	registerHTTPHandlers(httpMux, mongoDB, authSvc)
+
+	httpServer := &http.Server{
+		Addr:    httpServerAddr,
+		Handler: httpMux,
+		// Add timeouts for robustness in production
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	// Start HTTP Server in a goroutine
+	go func() {
+		log.Printf("INFO: starting HTTPS server on %s", httpServerAddr)
+		certFile := "../certificate/quill.crt"
+		keyFile := "../certificate/quill.key"
+
+		if err := httpServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+			log.Printf("FATAL: HTTPS server failed: %v", err)
+			cancel()
+		}
+	}()
+
+	return httpServer
+}
+
+// registerHTTPHandlers sets up the HTTP endpoint handlers
+func registerHTTPHandlers(mux *http.ServeMux, mongoDB *db.MongoDB, authSvc quill.AuthService) {
+	// Basic homepage handler
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello, Omer! This is the HTTP server speaking from %s\n", r.Host)
 	})
-	httpMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+
+	// Health check endpoint
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "OK")
 	})
-	httpMux.HandleFunc("/createUser", func(w http.ResponseWriter, r *http.Request) {
+
+	// User creation endpoint
+	mux.HandleFunc("/createUser", handleCreateUser(mongoDB, authSvc))
+}
+
+// handleCreateUser returns a handler function for the /createUser endpoint
+func handleCreateUser(mongoDB *db.MongoDB, authSvc quill.AuthService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("[/createUser] Received request")
 		// Only allow POST method
 		if r.Method != http.MethodPost {
@@ -144,7 +218,6 @@ func main() {
 		log.Printf("[/createUser] Creating user: %+v", user)
 
 		// Insert the user into MongoDB
-		// Use r.Context() for the request-scoped context
 		created, err := mongoDB.CreateUserDoc(r.Context(), user, req.AuthToken, authSvc)
 		if err != nil {
 			log.Printf("[/createUser] Error creating user: %v", err)
@@ -176,34 +249,12 @@ func main() {
 			return
 		}
 		log.Printf("[/createUser] Response sent: %+v", resp)
-	})
-
-	httpServer := &http.Server{
-		Addr:    httpServerAddr,
-		Handler: httpMux,
-		// Add timeouts for robustness in production
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       120 * time.Second,
 	}
+}
 
-	// --- Start HTTP Server in a Goroutine ---
-	// Inside the goroutine for the HTTP server
-	go func() {
-		log.Printf("INFO: starting HTTPS server on %s", httpServerAddr)
-		// This serves HTTPS (encrypted)
-		// You need to provide paths to your TLS certificate and private key files
-		certFile := "../certificate/quill.crt" // Reusing your existing certificate path for demonstration
-		keyFile := "../certificate/quill.key"  // Reusing your existing key path for demonstration
-
-		if err := httpServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-			log.Printf("FATAL: HTTPS server failed: %v", err)
-			cancel()
-		}
-	}()
-
-	// --- Graceful Shutdown Logic ---
+// waitForShutdown handles graceful shutdown of the servers
+func waitForShutdown(ctx context.Context, sigChan chan os.Signal, httpServer *http.Server, quillServer *quill.Server) {
+	// Wait for shutdown signal
 	select {
 	case sig := <-sigChan:
 		log.Printf("INFO: Received signal %s. Shutting down...", sig)
@@ -211,6 +262,17 @@ func main() {
 		log.Println("INFO: A server goroutine signalled shutdown.")
 	}
 
+	// Gracefully shut down the HTTP server
+	shutdownHTTPServer(httpServer)
+
+	// For the Quill server, ideally you'd also have a shutdown method
+	// This part would be implemented if quillServer has a Shutdown method
+
+	log.Println("INFO: All servers shut down. Exiting.")
+}
+
+// shutdownHTTPServer gracefully shuts down the HTTP server
+func shutdownHTTPServer(httpServer *http.Server) {
 	// Create a shutdown context with a timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
@@ -221,17 +283,6 @@ func main() {
 	} else {
 		log.Println("INFO: HTTP server shut down gracefully.")
 	}
-
-	// For the Quill server, you'd ideally have a `Shutdown` method
-	// or a way to close its listener. If quill.Server.StartTLS blocks
-	// until an error or close, you might need to add a channel
-	// to signal it to close its listener.
-	// For now, we'll assume it exits cleanly after an error or will be
-	// killed by process exit if it doesn't have a clean shutdown method.
-	// A more robust quill.Server would have a context-aware `StartTLS`
-	// or `Shutdown` method.
-
-	log.Println("INFO: All servers shut down. Exiting.")
 }
 
 // Helper function to get environment variable with fallback default
