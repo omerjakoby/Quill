@@ -16,7 +16,7 @@ type ServiceHandler struct {
 	keySvc   KeyService
 }
 
-// NewServiceHandler constructs the service-layer handler using existing services.
+// NewServiceHandler returns a new ServiceHandler initialized with the provided authentication, email, and key services.
 func NewServiceHandler(as AuthService, es EmailService, ks KeyService) *ServiceHandler {
 	return &ServiceHandler{authSvc: as, emailSvc: es, keySvc: ks}
 }
@@ -159,7 +159,7 @@ func (s *ServiceHandler) HandleUpdateEmail(ctx context.Context, payload UpdateEm
 	return mapUpdateResult(res), nil
 }
 
-// convertFilters transforms DTO EmailFilters to domain.FetchEmailFilters
+// convertFilters converts an EmailFilters DTO to a domain.FetchEmailFilters struct, parsing date strings to time.Time and returning nil if the input is nil.
 func convertFilters(f *EmailFilters) *domain.FetchEmailFilters {
 	if f == nil {
 		return nil
@@ -179,7 +179,8 @@ func convertFilters(f *EmailFilters) *domain.FetchEmailFilters {
 	return &df
 }
 
-// mapFetchOverview maps overview mode results into DTO
+// mapFetchOverview converts a domain FetchEmailResult in overview mode into a FetchEmailResponsePayload DTO.
+// It summarizes each email thread with its latest message, thread metadata, and message flags.
 func mapFetchOverview(res domain.FetchEmailResult) FetchEmailResponsePayload {
 	out := FetchEmailResponsePayload{
 		Status:       StatusOK,
@@ -215,7 +216,8 @@ func mapFetchOverview(res domain.FetchEmailResult) FetchEmailResponsePayload {
 	return out
 }
 
-// mapFetchThread maps thread mode results into DTO
+// mapFetchThread converts a domain FetchEmailResult for a specific thread into a FetchEmailResponsePayload DTO.
+// It includes detailed message information such as sender, recipients, subject, body, attachments, timestamps, and flags for each message in the thread.
 func mapFetchThread(res domain.FetchEmailResult, threadID string) FetchEmailResponsePayload {
 	out := FetchEmailResponsePayload{
 		Status:        StatusOK,
@@ -256,7 +258,8 @@ func mapFetchThread(res domain.FetchEmailResult, threadID string) FetchEmailResp
 	return out
 }
 
-// mapUpdateResult builds a DTO from domain.UpdateEmailResult
+// mapUpdateResult converts a domain-layer UpdateEmailResult into a DTO UpdateEmailAckPayload.
+// It maps each message update result, including any associated error details, for client response.
 func mapUpdateResult(res domain.UpdateEmailResult) UpdateEmailAckPayload {
 	var results []UpdateResultItem
 	for _, item := range res.Results {

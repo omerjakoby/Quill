@@ -22,6 +22,7 @@ import (
 	"quill/pkg/transport/quill"
 )
 
+// main is the entry point for the Quill server application, initializing services, starting protocol and HTTP servers, and handling graceful shutdown on termination signals.
 func main() {
 	log.Println("Starting Quill server...")
 
@@ -46,7 +47,7 @@ func main() {
 }
 
 //TODO OMER: create the struct and implement for emailSvc and keySvc then init them here
-// initializeServices sets up the authentication service and database connections
+// initializeServices initializes and returns the authentication service, MongoDB connection, and placeholders for email and key services.
 func initializeServices() (auth.AuthService, *db.MongoDB, ??new emailSvc type, ???new keySvc type) {
 	// Auth Service initialization
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -67,7 +68,8 @@ func initializeServices() (auth.AuthService, *db.MongoDB, ??new emailSvc type, ?
 	return authSvc, mongoDB, emailSvc, keySvc
 }
 
-// initializeMongoDB connects to MongoDB and ensures indexes
+// initializeMongoDB establishes a connection to MongoDB using environment variables and ensures required indexes are created.
+// It returns the connected MongoDB instance. The function logs fatal errors and terminates the program if the connection or index creation fails.
 func initializeMongoDB() *db.MongoDB {
 	mongoURI := getEnvWithDefault("MONGODB_URI", "mongodb://localhost:27017")
 	mongoPassword := getEnvWithDefault("mongodb_password", "")
@@ -97,7 +99,8 @@ func initializeMongoDB() *db.MongoDB {
 	return mongoDB
 }
 
-// ensureMongoDBIndexes creates necessary database indexes
+// ensureMongoDBIndexes creates required unique indexes on user collections in MongoDB.
+// Terminates the application if index creation fails.
 func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 	log.Println("Ensuring MongoDB unique user indexes...")
 	indexCtx, indexCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -109,7 +112,9 @@ func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 	log.Println("MongoDB unique user indexes ensured successfully.")
 }
 
-// setupQuillServer configures and starts the Quill protocol server
+// setupQuillServer initializes and launches the Quill protocol server with TLS support.
+// The server is started asynchronously and will signal cancellation if startup fails.
+// Returns the Quill server instance.
 func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc ???, keySvc ???) *quill.Server {
 	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc)
 	protocolHandler := quill.NewProtocolHandler(ServiceHandler)
@@ -128,7 +133,8 @@ func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc qu
 	return quillServer
 }
 
-// setupHTTPServer configures and starts the HTTP server
+// setupHTTPServer configures and launches the HTTPS server with registered handlers and production-ready timeouts.
+// The server is started asynchronously and returns the configured *http.Server instance.
 func setupHTTPServer(ctx context.Context, cancel context.CancelFunc, mongoDB *db.MongoDB, authSvc quill.AuthService) *http.Server {
 	httpServerAddr := "localhost:8080"
 	httpMux := http.NewServeMux()
@@ -161,7 +167,7 @@ func setupHTTPServer(ctx context.Context, cancel context.CancelFunc, mongoDB *db
 	return httpServer
 }
 
-// registerHTTPHandlers sets up the HTTP endpoint handlers
+// registerHTTPHandlers registers HTTP endpoint handlers for the homepage, health check, and user creation API on the provided ServeMux.
 func registerHTTPHandlers(mux *http.ServeMux, mongoDB *db.MongoDB, authSvc quill.AuthService) {
 	// Basic homepage handler
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -178,7 +184,10 @@ func registerHTTPHandlers(mux *http.ServeMux, mongoDB *db.MongoDB, authSvc quill
 	mux.HandleFunc("/createUser", handleCreateUser(mongoDB, authSvc))
 }
 
-// handleCreateUser returns a handler function for the /createUser endpoint
+// handleCreateUser returns an HTTP handler for the /createUser endpoint that processes user creation requests.
+// The handler accepts POST requests with a JSON body containing user details, validates required fields,
+// creates a new user in MongoDB using the provided authentication service, and responds with a JSON result
+// indicating success, conflict if the user already exists, or an error for invalid input or server issues.
 func handleCreateUser(mongoDB *db.MongoDB, authSvc quill.AuthService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Println("[/createUser] Received request")
@@ -252,7 +261,8 @@ func handleCreateUser(mongoDB *db.MongoDB, authSvc quill.AuthService) http.Handl
 	}
 }
 
-// waitForShutdown handles graceful shutdown of the servers
+// waitForShutdown waits for a shutdown signal or context cancellation and gracefully shuts down the HTTP server.
+// Logs shutdown events and coordinates server termination. The Quill server is not shut down unless a shutdown method is implemented.
 func waitForShutdown(ctx context.Context, sigChan chan os.Signal, httpServer *http.Server, quillServer *quill.Server) {
 	// Wait for shutdown signal
 	select {
@@ -271,7 +281,7 @@ func waitForShutdown(ctx context.Context, sigChan chan os.Signal, httpServer *ht
 	log.Println("INFO: All servers shut down. Exiting.")
 }
 
-// shutdownHTTPServer gracefully shuts down the HTTP server
+// shutdownHTTPServer attempts to gracefully stop the HTTP server within a 5-second timeout, logging the outcome.
 func shutdownHTTPServer(httpServer *http.Server) {
 	// Create a shutdown context with a timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -28,7 +28,7 @@ type ProtocolHandler struct {
 	service *ServiceHandler
 }
 
-// NewProtocolHandler initializes a ProtocolHandler with the given service layer
+// NewProtocolHandler creates a new ProtocolHandler that delegates business logic to the provided service handler.
 func NewProtocolHandler(svc *ServiceHandler) *ProtocolHandler {
 	return &ProtocolHandler{service: svc}
 }
