@@ -14,13 +14,13 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 5.  [Security Considerations](#security-considerations)
 6.  [Message Attributes](#message-attributes)
 7.  [Packet Framing & Transport](#packet-framing--transport)
-8.  [Handshake](#handshake)
-9.  [Authentication (Optional)](#authentication-optional)
-10. [Sending Emails](#Sending-Emails)
-11. [Fetching Emails](#fetching-emails)
-12. [Updating Emails](#updating-emails)
-13. [Key Management & Federation](#key-management-and-federation)
-14. [Ping](#)
+8.  [Ping](#ping)
+9.  [Handshake](#handshake)
+10. [Authentication (Optional)](#authentication-optional)
+11. [Sending Emails](#Sending-Emails)
+12. [Fetching Emails](#fetching-emails)
+13. [Updating Emails](#updating-emails)
+14. [Key Management & Federation](#key-management-and-federation)
 15. [Error Handling](#error-handling)
 16. [Error Codes](#Error-Code-Categories)
 
@@ -32,7 +32,7 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 * **TLS**: **Required** for all client-server and server-server connections.
 * **Federation**: Each provider uses a CA-signed certificate, manages users, public keys, and trust policies.
 * **Extensibility**: Supports adding operations (e.g., delete, move) in future versions.
-* **Flow**: Handshake → (Auth) → Message Transfer (Send/Fetch/Update) → Key Management → Errors → …
+* **Flow**: Handshake/Ping → (Auth) → Message Transfer (Send/Fetch/Update) → Key Management → Errors → …
 
 ---
 
@@ -168,6 +168,35 @@ The standard categories are:
 * **Framing:** 4-byte big-endian length prefix, then JSON.
 * **Transport:** Raw TCP with **mandatory TLS**.
 * **Reliability:** Handle partial frames, connection drops, session resumption.
+
+---
+
+## Ping
+
+**Purpose**: Check connection health and measure latency between the client and server.<br>
+The PING packet can be sent before the Quill protocol Handshake is completed, as well as at any point during an active session.
+
+### Ping (Client -> Server)
+
+```json
+{
+  "type": "PING",
+  "timestamp": "2025-06-22T17:00:00Z",
+  "payload": {}
+}
+```
+
+### Ping Ack (Server -> Client)
+
+```json
+{
+  "type": "PING_ACK",
+  "timestamp": "2025-06-22T17:00:01Z",
+  "payload": {
+    "echo_timestamp": "2025-06-22T17:00:00Z"
+  }
+}
+```
 
 ---
 
@@ -607,34 +636,6 @@ The server responds with an acknowledgment, indicating the outcome for each mess
     ]
   },
   "signature": "..."
-}
-```
-
----
-
-## Ping
-
-**Purpose**: Check connection health and measure latency between the client and server.
-
-### Ping (Client -> Server)
-
-```json
-{
-  "type": "PING",
-  "timestamp": "2025-06-22T17:00:00Z",
-  "payload": {}
-}
-```
-
-### Ping Ack (Server -> Client)
-
-```json
-{
-  "type": "PING_ACK",
-  "timestamp": "2025-06-22T17:00:01Z",
-  "payload": {
-    "echo_timestamp": "2025-06-22T17:00:00Z"
-  }
 }
 ```
 

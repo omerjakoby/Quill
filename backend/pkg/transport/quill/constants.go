@@ -20,6 +20,8 @@ const (
 	PacketTypeFetchEmailResponse = "FETCH_EMAIL_RESPONSE"
 	PacketTypeUpdateEmail        = "UPDATE_EMAIL"
 	PacketTypeUpdateEmailAck     = "UPDATE_EMAIL_ACK"
+	PacketTypePing               = "PING"
+	PacketTypePingAck            = "PING_ACK"
 	PacketTypeError              = "ERROR"
 )
 
