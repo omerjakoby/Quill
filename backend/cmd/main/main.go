@@ -45,9 +45,9 @@ func main() {
 	waitForShutdown(ctx, sigChan, httpServer, quillServer)
 }
 
-//TODO OMER: create the struct and implement for emailSvc and keySvc then init them here
+// TODO OMER: create the struct and implement for emailSvc and keySvc then init them here
 // initializeServices sets up the authentication service and database connections
-func initializeServices() (auth.AuthService, *db.MongoDB, ??new emailSvc type, ???new keySvc type) {
+func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, domain.KeyService) {
 	// Auth Service initialization
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer authSvcCancel()
@@ -56,15 +56,19 @@ func initializeServices() (auth.AuthService, *db.MongoDB, ??new emailSvc type, ?
 	if err != nil {
 		log.Fatalf("auth init failed: %v", err)
 	}
-	
+
 	// MongoDB initialization
 	mongoDB := initializeMongoDB()
 
 	// Message service initialization
-	msgSvc := domain.NewMongoMessageService(mongoDB.GetDatabase())
+	msgSvc := domain.NewMongoEmailService(mongoDB.GetDatabase())
 	log.Println("Created MongoDB-backed message service")
 
-	return authSvc, mongoDB, emailSvc, keySvc
+	// Key service initialization
+	keySvc := domain.NewMockKeyService()
+	log.Println("Created mock key service")
+
+	return authSvc, mongoDB, msgSvc, keySvc
 }
 
 // initializeMongoDB connects to MongoDB and ensures indexes
@@ -110,7 +114,7 @@ func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 }
 
 // setupQuillServer configures and starts the Quill protocol server
-func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc ???, keySvc ???) *quill.Server {
+func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc quill.EmailService, keySvc domain.KeyService) *quill.Server {
 	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc)
 	protocolHandler := quill.NewProtocolHandler(ServiceHandler)
 

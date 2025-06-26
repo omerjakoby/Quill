@@ -17,32 +17,28 @@ import (
 	"time"
 )
 
-// MessageService defines the interface for message-related operations
-type MessageService interface {
-	Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error)
-	Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error)
-}
+// EmailService defines the interface for message-related operations
 
-// MockMessageService implements the MessageService interface with mock data
+// MockEmailService implements the EmailService interface with mock data
 
-type MockMessageService struct{}
+type MockEmailService struct{}
 
 /**
 // Send implements a mock message sending operation
-func (m *MockMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+func (m *MockEmailService) Send(ctx context.Context, req SendEmailRequest) (SendEmailResult, error) {
 	log.Println("Mock: Sending message to", req.To)
-	return DomainSendResult{
+	return SendEmailResult{
 		MessageID:   "mock-msg-123",
 		ThreadID:    "mock-thread-456",
 		DeliveredTo: req.To,
-		QueuedFor:   []string{},
+
 	}, nil
 }
 
  Fetch implements a mock message fetching operation
-func (m *MockMessageService) Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+func (m *MockEmailService) Fetch(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	log.Println("Mock: Fetching messages with mode", req.Mode)
-	return DomainFetchResult{
+	return FetchEmailResult{
 		Total:    0,
 		Limit:    10,
 		Offset:   0,
@@ -51,14 +47,14 @@ func (m *MockMessageService) Fetch(ctx context.Context, req DomainFetchRequest) 
 }
 **/
 
-// MongoMessageService implements the MessageService interface with MongoDB storage
-type MongoMessageService struct {
+// MongoEmailService implements the EmailService interface with MongoDB storage
+type MongoEmailService struct {
 	db *mongo.Database
 }
 
-// NewMongoMessageService creates a new MongoDB-backed MessageService
-func NewMongoMessageService(db *mongo.Database) *MongoMessageService {
-	return &MongoMessageService{
+// NewMongoEmailService creates a new MongoDB-backed EmailService
+func NewMongoEmailService(db *mongo.Database) *MongoEmailService {
+	return &MongoEmailService{
 		db: db,
 	}
 }
@@ -75,7 +71,7 @@ type mailboxEntry struct {
 }
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
-func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+func (m *MongoEmailService) SendEmail(ctx context.Context, req SendEmailRequest) (SendEmailResult, error) {
 	// Validate the request
 	if validateQuillMailFormat(req.From) {
 		if extractDomain(req.From) == constants.DOMAIN_NAME {
@@ -83,27 +79,27 @@ func (m *MongoMessageService) Send(ctx context.Context, req DomainSendRequest) (
 		}
 		return m.SendExternal(ctx, req)
 	}
-	return DomainSendResult{}, errorString("invalid sender address format")
+	return SendEmailResult{}, errorString("invalid sender address format")
 
 }
 
-func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailRequest) (SendEmailResult, error) {
 
 	// Validate recipient address format
 	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
 		if !validateQuillMailFormat(addr) {
-			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+			return SendEmailResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
 		}
 	}
 
 	messageID, err := getOrValidateMessageID(req.MessageID)
 	if err != nil {
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
-	threadID, err := getOrValidateThreadID(req.Options.ThreadID)
+	threadID, err := getOrValidateThreadID(req.ThreadID)
 	if err != nil {
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
 	userID := req.From
@@ -129,7 +125,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 
 	if _, err := m.db.Collection("messages").InsertOne(ctx, messageDoc); err != nil {
 		log.Printf("Failed to insert message: %v", err)
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
 	entries := []interface{}{
@@ -146,7 +142,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	category, err := m.GetCategory(ctx, req)
 	if err != nil {
 		log.Printf("Failed to get category for message: %v", err)
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
 	allRecipients := append(append(req.To, req.CC...), req.BCC...)
@@ -160,7 +156,7 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 		}
 	}
 
-	return DomainSendResult{
+	return SendEmailResult{
 		MessageID:   messageID,
 		ThreadID:    threadID,
 		DeliveredTo: internal,
@@ -168,30 +164,30 @@ func (m *MongoMessageService) SendInternal(ctx context.Context, req DomainSendRe
 	}, nil
 }
 
-func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRequest) (DomainSendResult, error) {
+func (m *MongoEmailService) SendExternal(ctx context.Context, req SendEmailRequest) (SendEmailResult, error) {
 	// Validate and extract threadID and messageID
-	threadID, err := validateThreadID(req.Options.ThreadID)
+	threadID, err := validateThreadID(req.ThreadID)
 	if err != nil {
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 	messageID, err := validateMessageID(req.MessageID)
 	if err != nil {
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
 	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
 		if !validateQuillMailFormat(addr) {
-			return DomainSendResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+			return SendEmailResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
 		}
 	}
 
 	// Check for existing message
 	exists, err := m.messageExists(ctx, messageID)
 	if err != nil {
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 	if exists {
-		return DomainSendResult{}, errorString("message with this ID already exists")
+		return SendEmailResult{}, errorString("message with this ID already exists")
 	}
 
 	// Prepare message document
@@ -216,13 +212,13 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 	_, err = m.db.Collection("messages").InsertOne(ctx, messageDoc)
 	if err != nil {
 		log.Printf("Failed to insert message: %v", err)
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
 	category, err := m.GetCategory(ctx, req)
 	if err != nil {
 		log.Printf("Failed to get category for message: %v", err)
-		return DomainSendResult{}, err
+		return SendEmailResult{}, err
 	}
 
 	// Create mailbox entries for all internal recipients
@@ -236,7 +232,7 @@ func (m *MongoMessageService) SendExternal(ctx context.Context, req DomainSendRe
 		}
 	}
 
-	return DomainSendResult{
+	return SendEmailResult{
 		MessageID: messageID,
 		ThreadID:  threadID,
 	}, nil
@@ -259,7 +255,7 @@ func validateMessageID(messageID string) (string, error) {
 }
 
 // Helper to check if a message exists
-func (m *MongoMessageService) messageExists(ctx context.Context, messageID string) (bool, error) {
+func (m *MongoEmailService) messageExists(ctx context.Context, messageID string) (bool, error) {
 	singleResult := m.db.Collection("messages").FindOne(ctx, bson.M{"messageId": messageID})
 	if err := singleResult.Err(); err != nil {
 		if err != mongo.ErrNoDocuments {
@@ -272,7 +268,7 @@ func (m *MongoMessageService) messageExists(ctx context.Context, messageID strin
 }
 
 // Helper to get internal recipients
-func getInternalRecipients(req DomainSendRequest, domain string) []string {
+func getInternalRecipients(req SendEmailRequest, domain string) []string {
 	var recipients []string
 	for _, addr := range req.To {
 		if extractDomain(addr) == domain {
@@ -310,32 +306,32 @@ func createMailboxEntries(recipients []string, messageID, threadID string, categ
 }
 
 // Fetch retrieves messages based on the provided request
-func (m *MongoMessageService) Fetch(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
-	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeFolder && req.Folder == nil) {
-		return DomainFetchResult{}, errorString("missing required parameters for fetch mode")
-	} else if req.Mode != FetchModeThread && req.Mode != FetchModeFolder {
-		return DomainFetchResult{}, errorString("invalid fetch mode")
-	} else if req.Mode == FetchModeFolder {
+func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
+	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeOverview && req.Folder == nil) {
+		return FetchEmailResult{}, errorString("missing required parameters for fetch mode")
+	} else if req.Mode != FetchModeThread && req.Mode != FetchModeThread {
+		return FetchEmailResult{}, errorString("invalid fetch mode")
+	} else if req.Mode == FetchModeThread {
 		return m.FetchFolder(ctx, req)
 	} else if req.Mode == FetchModeThread {
 		return m.FetchThread(ctx, req)
 	}
-	return DomainFetchResult{}, errorString("unsupported fetch mode")
+	return FetchEmailResult{}, errorString("unsupported fetch mode")
 }
 
-func (m *MongoMessageService) FetchThread(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+func (m *MongoEmailService) FetchThread(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	userID, ok := ctx.Value("userID").(string)
 	if !ok {
-		return DomainFetchResult{}, ErrUserNotAuthenticated
+		return FetchEmailResult{}, ErrUserNotAuthenticated
 	}
 
 	if req.ThreadID == nil {
-		return DomainFetchResult{}, errorString("thread ID is required for thread mode")
+		return FetchEmailResult{}, errorString("thread ID is required for thread mode")
 	}
 
 	quillmail, err := m.getUserQuillMail(ctx, userID)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
 	limit := 10
@@ -349,42 +345,42 @@ func (m *MongoMessageService) FetchThread(ctx context.Context, req DomainFetchRe
 
 	// Check if the user has access to the thread
 	if err := m.checkThreadAccess(ctx, req, userID, quillmail); err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
 	// Get all messages in the thread
 	rawMessages, total, err := m.fetchThreadMessages(ctx, *req.ThreadID, offset, limit)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
 	if len(rawMessages) == 0 {
-		return DomainFetchResult{
-			Total:    int(total),
-			Limit:    limit,
-			Offset:   offset,
-			Messages: []Message{},
+		return FetchEmailResult{
+			TotalMessages: int(total),
+			Limit:         limit,
+			Offset:        offset,
+			Messages:      []Message{},
 		}, nil
 	}
 
 	messageIDs := extractMessageIDsFromRaw(rawMessages)
 	readStatusMap, err := m.fetchReadStatusMap(ctx, quillmail, messageIDs)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
 	messages := mapRawMessagesToDomain(rawMessages, readStatusMap)
 
-	return DomainFetchResult{
-		Total:    int(total),
-		Limit:    limit,
-		Offset:   offset,
-		Messages: messages,
+	return FetchEmailResult{
+		TotalMessages: int(total),
+		Limit:         limit,
+		Offset:        offset,
+		Messages:      messages,
 	}, nil
 }
 
 // Helper: Check if user has access to the thread
-func (m *MongoMessageService) checkThreadAccess(ctx context.Context, req DomainFetchRequest, userID, quillmail string) error {
+func (m *MongoEmailService) checkThreadAccess(ctx context.Context, req FetchEmailRequest, userID, quillmail string) error {
 	mailboxFilter := buildMailboxFilter(req, userID, quillmail)
 	count, err := m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
 	if err != nil {
@@ -408,7 +404,7 @@ func (m *MongoMessageService) checkThreadAccess(ctx context.Context, req DomainF
 }
 
 // Helper: Fetch messages in the thread with pagination
-func (m *MongoMessageService) fetchThreadMessages(ctx context.Context, threadID string, offset, limit int) ([]bson.M, int64, error) {
+func (m *MongoEmailService) fetchThreadMessages(ctx context.Context, threadID string, offset, limit int) ([]bson.M, int64, error) {
 	messageFilter := bson.M{
 		"options.threadID": threadID,
 	}
@@ -446,7 +442,7 @@ func extractMessageIDsFromRaw(rawMessages []bson.M) []string {
 }
 
 // Helper: Fetch read status map for messages
-func (m *MongoMessageService) fetchReadStatusMap(ctx context.Context, quillmail string, messageIDs []string) (map[string]bool, error) {
+func (m *MongoEmailService) fetchReadStatusMap(ctx context.Context, quillmail string, messageIDs []string) (map[string]bool, error) {
 	readStatusFilter := bson.M{
 		"userId":    quillmail,
 		"messageId": bson.M{"$in": messageIDs},
@@ -481,15 +477,15 @@ func mapRawMessagesToDomain(rawMessages []bson.M, readStatusMap map[string]bool)
 	return messages
 }
 
-func (m *MongoMessageService) FetchFolder(ctx context.Context, req DomainFetchRequest) (DomainFetchResult, error) {
+func (m *MongoEmailService) FetchFolder(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	userID, ok := ctx.Value("userID").(string)
 	if !ok {
-		return DomainFetchResult{}, ErrUserNotAuthenticated
+		return FetchEmailResult{}, ErrUserNotAuthenticated
 	}
 
 	quillmail, err := m.getUserQuillMail(ctx, userID)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
 	limit := 10
@@ -504,38 +500,38 @@ func (m *MongoMessageService) FetchFolder(ctx context.Context, req DomainFetchRe
 	filter := buildMailboxFilter(req, userID, quillmail)
 	total, err := m.db.Collection("mailboxes").CountDocuments(ctx, filter)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
 	entries, err := m.fetchMailboxEntries(ctx, filter, offset, limit)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 	if len(entries) == 0 {
-		return DomainFetchResult{
-			Total:    int(total),
-			Limit:    limit,
-			Offset:   offset,
-			Messages: []Message{},
+		return FetchEmailResult{
+			TotalMessages: int(total),
+			Limit:         limit,
+			Offset:        offset,
+			Messages:      []Message{},
 		}, nil
 	}
 
 	messageIDs := extractMessageIDs(entries)
 	messages, err := m.fetchMessagesByIDs(ctx, messageIDs, entries)
 	if err != nil {
-		return DomainFetchResult{}, err
+		return FetchEmailResult{}, err
 	}
 
-	return DomainFetchResult{
-		Total:    int(total),
-		Limit:    limit,
-		Offset:   offset,
-		Messages: messages,
+	return FetchEmailResult{
+		TotalMessages: int(total),
+		Limit:         limit,
+		Offset:        offset,
+		Messages:      messages,
 	}, nil
 }
 
 // getUserQuillMail retrieves the user's quillmail address from the users collection
-func (m *MongoMessageService) getUserQuillMail(ctx context.Context, userID string) (string, error) {
+func (m *MongoEmailService) getUserQuillMail(ctx context.Context, userID string) (string, error) {
 	collection := m.db.Collection("users")
 	filter := bson.M{"_id": userID}
 	var result struct {
@@ -552,13 +548,13 @@ func (m *MongoMessageService) getUserQuillMail(ctx context.Context, userID strin
 }
 
 // buildMailboxFilter builds the filter for mailbox queries based on fetch mode
-func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M {
+func buildMailboxFilter(req FetchEmailRequest, userID, quillmail string) bson.M {
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		return bson.M{
 			"userId":   quillmail,
 			"threadId": *req.ThreadID,
 		}
-	} else if req.Mode == FetchModeFolder && req.Folder != nil {
+	} else if req.Mode == FetchModeOverview && req.Folder != nil {
 		return bson.M{
 			"userId": quillmail,
 			"folder": *req.Folder,
@@ -570,16 +566,17 @@ func buildMailboxFilter(req DomainFetchRequest, userID, quillmail string) bson.M
 	}
 }
 
-func (m *MongoMessageService) GetCategory(ctx context.Context, req DomainSendRequest) (string, error) {
+func (m *MongoEmailService) GetCategory(ctx context.Context, req SendEmailRequest) (string, error) {
 	var htmlContent string
-	for _, content := range req.Body.Content {
-		if content.Type == ContentTypeHTML {
-			htmlContent = content.Value
-			break
-		} else {
-			htmlContent = content.Value
+	if req.Body.HTML == "" {
+		if req.Body.Text == "" {
+			return "", errorString("no content provided for category extraction")
 		}
+		htmlContent = req.Body.Text
+	} else {
+		htmlContent = req.Body.HTML
 	}
+
 	if htmlContent == "" {
 		return "", errorString("content is empty")
 	}
@@ -643,7 +640,7 @@ CLEANUP:
 }
 
 // fetchMailboxEntries retrieves mailbox entries with sorting, skip, and limit
-func (m *MongoMessageService) fetchMailboxEntries(ctx context.Context, filter bson.M, offset, limit int) ([]mailboxEntry, error) {
+func (m *MongoEmailService) fetchMailboxEntries(ctx context.Context, filter bson.M, offset, limit int) ([]mailboxEntry, error) {
 	findOptions := options.Find().
 		SetSort(bson.D{{Key: "receivedAt", Value: -1}}).
 		SetSkip(int64(offset)).
@@ -676,7 +673,7 @@ func extractMessageIDs(entries []mailboxEntry) []string {
 }
 
 // fetchMessagesByIDs fetches messages and maps them to domain Message objects in the order of entries
-func (m *MongoMessageService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]Message, error) {
+func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]Message, error) {
 	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
 	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
 	if err != nil {
@@ -712,19 +709,41 @@ func (m *MongoMessageService) fetchMessagesByIDs(ctx context.Context, messageIDs
 // Helper function to convert BSON to Message domain object
 func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	msg := Message{
-		MessageID: getStringFromBson(bsonMsg, "messageId"),
-		ThreadID:  getThreadIDFromBson(bsonMsg),
-		From:      getStringFromBson(bsonMsg, "fromID"),
-		Read:      read,
+		ID:       getStringFromBson(bsonMsg, "messageId"),
+		ThreadID: getThreadIDFromBson(bsonMsg),
+		From:     getStringFromBson(bsonMsg, "fromMail"),
+		To:       getStringArrayFromBson(bsonMsg, "to"),
+		CC:       getStringArrayFromBson(bsonMsg, "cc"),
+		BCC:      getStringArrayFromBson(bsonMsg, "bcc"),
+		Subject:  getStringFromBson(bsonMsg, "subject"),
+		Body: EmailBody{
+			Text: getStringFromBson(bsonMsg["body"].(bson.M), "text"),
+			HTML: getStringFromBson(bsonMsg["body"].(bson.M), "html"),
+		},
+		Attachments: getAttachmentsFromBson(bsonMsg),
+		Timestamp:   getTimeFromBson(bsonMsg, "sentAt"),
+		Flags: EmailFlags{
+			IsRead: read,
+		},
 	}
 
-	msg.To = getStringArrayFromBson(bsonMsg, "to")
-	msg.CC = getStringArrayFromBson(bsonMsg, "cc")
-	msg.Subject = getStringFromBson(bsonMsg, "subject")
-	msg.SentAt = getTimeFromBson(bsonMsg, "sentAt")
-	msg.Body = getBodyFromBson(bsonMsg)
-
 	return msg
+}
+
+func getAttachmentsFromBson(bsonMsg bson.M) []Attachment {
+	var attachments []Attachment
+	if attachs, ok := bsonMsg["attachments"].(primitive.A); ok {
+		for _, a := range attachs {
+			if attach, ok := a.(bson.M); ok {
+				attachments = append(attachments, Attachment{
+					Filename: getStringFromBson(attach, "filename"),
+					Mimetype: getStringFromBson(attach, "mimetype"),
+					Link:     getStringFromBson(attach, "link"),
+				})
+			}
+		}
+	}
+	return attachments
 }
 
 func getStringFromBson(bsonMsg bson.M, key string) string {
@@ -762,7 +781,8 @@ func getTimeFromBson(bsonMsg bson.M, key string) time.Time {
 	return time.Time{}
 }
 
-func getBodyFromBson(bsonMsg bson.M) Body {
+// Deprecated: This function is kept for reference, but not used in the current implementation
+/*func getBodyFromBson(bsonMsg bson.M) Body {
 	var body Body
 	bodyMap, ok := bsonMsg["body"].(bson.M)
 	if !ok {
@@ -780,8 +800,10 @@ func getBodyFromBson(bsonMsg bson.M) Body {
 	}
 	return body
 }
+*/
 
-// Helper to parse a content item from BSON
+// Helper to parse a content item from BSON (deprecated, kept for reference)
+/*
 func parseContentItem(c interface{}) *Content {
 	contentMap, ok := c.(bson.M)
 	if !ok {
@@ -796,6 +818,8 @@ func parseContentItem(c interface{}) *Content {
 	}
 	return &contentItem
 }
+
+*/
 
 // ErrUserNotAuthenticated is returned when a user ID cannot be extracted from context
 var ErrUserNotAuthenticated = error(errorString("user not authenticated"))
@@ -871,4 +895,8 @@ func validateQuillMailFormat(input string) bool {
 	username := parts[0]
 	domain := parts[1]
 	return username != "" && domain != "" && strings.Contains(domain, ".")
+}
+
+func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (UpdateEmailResult, error) {
+	return UpdateEmailResult{}, nil
 }
