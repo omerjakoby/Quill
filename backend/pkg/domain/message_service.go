@@ -309,7 +309,7 @@ func createMailboxEntries(recipients []string, messageID, threadID string, categ
 func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeOverview && req.Folder == nil) {
 		return FetchEmailResult{}, errorString("missing required parameters for fetch mode")
-	} else if req.Mode != FetchModeThread && req.Mode != FetchModeThread {
+	} else if req.Mode != FetchModeThread {
 		return FetchEmailResult{}, errorString("invalid fetch mode")
 	} else if req.Mode == FetchModeThread {
 		return m.FetchFolder(ctx, req)
