@@ -309,9 +309,9 @@ func createMailboxEntries(recipients []string, messageID, threadID string, categ
 func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeOverview && req.Folder == nil) {
 		return FetchEmailResult{}, errorString("missing required parameters for fetch mode")
-	} else if req.Mode != FetchModeThread {
+	} else if req.Mode != FetchModeThread && req.Mode != FetchModeOverview {
 		return FetchEmailResult{}, errorString("invalid fetch mode")
-	} else if req.Mode == FetchModeThread {
+	} else if req.Mode == FetchModeOverview {
 		return m.FetchFolder(ctx, req)
 	} else if req.Mode == FetchModeThread {
 		return m.FetchThread(ctx, req)
@@ -709,17 +709,14 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 // Helper function to convert BSON to Message domain object
 func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	msg := Message{
-		ID:       getStringFromBson(bsonMsg, "messageId"),
-		ThreadID: getThreadIDFromBson(bsonMsg),
-		From:     getStringFromBson(bsonMsg, "fromMail"),
-		To:       getStringArrayFromBson(bsonMsg, "to"),
-		CC:       getStringArrayFromBson(bsonMsg, "cc"),
-		BCC:      getStringArrayFromBson(bsonMsg, "bcc"),
-		Subject:  getStringFromBson(bsonMsg, "subject"),
-		Body: EmailBody{
-			Text: getStringFromBson(bsonMsg["body"].(bson.M), "text"),
-			HTML: getStringFromBson(bsonMsg["body"].(bson.M), "html"),
-		},
+		ID:          getStringFromBson(bsonMsg, "messageId"),
+		ThreadID:    getThreadIDFromBson(bsonMsg),
+		From:        getStringFromBson(bsonMsg, "fromMail"),
+		To:          getStringArrayFromBson(bsonMsg, "to"),
+		CC:          getStringArrayFromBson(bsonMsg, "cc"),
+		BCC:         getStringArrayFromBson(bsonMsg, "bcc"),
+		Subject:     getStringFromBson(bsonMsg, "subject"),
+		Body:        getEmailBodyFromBson(bsonMsg),
 		Attachments: getAttachmentsFromBson(bsonMsg),
 		Timestamp:   getTimeFromBson(bsonMsg, "sentAt"),
 		Flags: EmailFlags{
@@ -728,6 +725,18 @@ func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 	}
 
 	return msg
+}
+
+// Helper function to safely extract EmailBody from BSON
+func getEmailBodyFromBson(bsonMsg bson.M) EmailBody {
+	if bodyData, ok := bsonMsg["body"].(bson.M); ok {
+		return EmailBody{
+			Text: getStringFromBson(bodyData, "text"),
+			HTML: getStringFromBson(bodyData, "html"),
+		}
+	}
+	// Return empty EmailBody if type assertion fails
+	return EmailBody{}
 }
 
 func getAttachmentsFromBson(bsonMsg bson.M) []Attachment {
