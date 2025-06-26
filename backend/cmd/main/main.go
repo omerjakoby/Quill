@@ -45,7 +45,7 @@ func main() {
 }
 
 // initializeServices sets up the authentication service and database connections
-func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, domain.KeyService) {
+func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, quill.KeyService) {
 	// Auth Service initialization
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer authSvcCancel()
@@ -112,7 +112,7 @@ func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 }
 
 // setupQuillServer configures and starts the Quill protocol server
-func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc quill.EmailService, keySvc domain.KeyService) *quill.Server {
+func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc quill.EmailService, keySvc quill.KeyService) *quill.Server {
 	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc)
 	protocolHandler := quill.NewProtocolHandler(ServiceHandler)
 

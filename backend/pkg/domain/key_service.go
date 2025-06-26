@@ -5,11 +5,6 @@ import (
 	"time"
 )
 
-// KeyService defines the interface for key management operations.
-type KeyService interface {
-	FetchKeys(ctx context.Context, req FetchKeysRequest) (FetchKeysResult, error)
-}
-
 // MockKeyService is a mock implementation of the KeyService interface.
 type MockKeyService struct{}
 
