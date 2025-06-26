@@ -34,7 +34,6 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Initialize services and databases
-	//TODO OMER read the todo in line 48 and fix
 	authSvc, mongoDB, emailSvc, keySvc := initializeServices()
 
 	// Configure and start servers
@@ -45,7 +44,6 @@ func main() {
 	waitForShutdown(ctx, sigChan, httpServer, quillServer)
 }
 
-// TODO OMER: create the struct and implement for emailSvc and keySvc then init them here
 // initializeServices sets up the authentication service and database connections
 func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, domain.KeyService) {
 	// Auth Service initialization
