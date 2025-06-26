@@ -271,6 +271,8 @@ type UpdateEmailAckPayload struct {
 	Results []UpdateResultItem `json:"results"`
 }
 
+// -------------------- Ping --------------------
+
 // -------------------- Errors --------------------
 
 // ErrorPayload is used for ERROR packets.

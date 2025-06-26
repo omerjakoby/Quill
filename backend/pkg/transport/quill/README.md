@@ -19,9 +19,10 @@ It replaces legacy email systems (like SMTP,POP3,IMAP) with a structured, back-a
 10. [Sending Emails](#Sending-Emails)
 11. [Fetching Emails](#fetching-emails)
 12. [Updating Emails](#updating-emails)
-13. [Key Management & Federation](#Key-Management-and-Federation)
-14. [Error Handling](#error-handling)
-15. [Error Codes](#Error-Code-Categories)
+13. [Key Management & Federation](#key-management-and-federation)
+14. [Ping](#)
+15. [Error Handling](#error-handling)
+16. [Error Codes](#Error-Code-Categories)
 
 ---
 
@@ -606,6 +607,34 @@ The server responds with an acknowledgment, indicating the outcome for each mess
     ]
   },
   "signature": "..."
+}
+```
+
+---
+
+## Ping
+
+**Purpose**: Check connection health and measure latency between the client and server.
+
+### Ping (Client -> Server)
+
+```json
+{
+  "type": "PING",
+  "timestamp": "2025-06-22T17:00:00Z",
+  "payload": {}
+}
+```
+
+### Ping Ack (Server -> Client)
+
+```json
+{
+  "type": "PING_ACK",
+  "timestamp": "2025-06-22T17:00:01Z",
+  "payload": {
+    "echo_timestamp": "2025-06-22T17:00:00Z"
+  }
 }
 ```
 
