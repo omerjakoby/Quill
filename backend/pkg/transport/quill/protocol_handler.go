@@ -45,6 +45,11 @@ func (p *ProtocolHandler) Serve(conn net.Conn) {
 			return // connection closed or framing error
 		}
 
+		if pkt.Type == PacketTypePing {
+			p.parsePingPayload(ctx, conn, pkt)
+			continue
+		}
+
 		switch phase {
 		case phaseAwaitHandshake:
 			if ok := p.handleStateHandshake(ctx, conn, pkt); !ok {
@@ -131,6 +136,22 @@ func (p *ProtocolHandler) handleStateRequest(ctx context.Context, conn net.Conn,
 		return false
 	}
 	return true
+}
+
+// parsePingPayload handles a client PING by echoing its timestamp back in a PING_RESPONSE.
+func (p *ProtocolHandler) parsePingPayload(ctx context.Context, conn net.Conn, pkt *Packet) {
+	// pkt.Timestamp holds the original client-sent time
+	ack := PingAckPayload{
+		EchoTimestamp: pkt.Timestamp,
+	}
+
+	data, err := json.Marshal(ack)
+	if err != nil {
+		p.sendError(conn, ErrorCodeInternalServerError, "failed to marshal PingAckPayload")
+		return
+	}
+
+	p.sendResponse(conn, &Packet{Type: PacketTypePingAck, Payload: data})
 }
 
 // parseHandshakePayload unmarshals HANDSHAKE and executes transport handshake

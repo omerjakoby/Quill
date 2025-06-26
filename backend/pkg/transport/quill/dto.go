@@ -272,6 +272,12 @@ type UpdateEmailAckPayload struct {
 	Results []UpdateResultItem `json:"results"`
 }
 
+// -------------------- Ping --------------------
+
+type PingAckPayload struct {
+	EchoTimestamp string `json:"echo_timestamp"`
+}
+
 // -------------------- Errors --------------------
 
 // ErrorPayload is used for ERROR packets.
