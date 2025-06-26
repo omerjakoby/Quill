@@ -53,6 +53,7 @@ type SendEmailResult struct {
 	MessageID   string   // echoed back message ID
 	ThreadID    string   // thread into which message was placed
 	DeliveredTo []string // actual recipients who received the message
+	QueuedFor   []string // recipients queued for later delivery
 }
 
 // ------------------ FETCH Request ------------------

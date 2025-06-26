@@ -90,7 +90,10 @@ func (s *ServiceHandler) HandleSendEmail(ctx context.Context, payload SendEmailP
 	if err != nil {
 		return SendEmailAckPayload{}, &ErrorPayload{Code: ErrorCodeInternalServerError, Message: err.Error(), Context: PacketTypeSendEmail}
 	}
-	return SendEmailAckPayload{Status: StatusOK, MessageID: res.MessageID, DeliveredTo: res.DeliveredTo}, nil
+
+	//TODO ITAMAR handle external delivery if needed. the res contains the queued_for field which is a list of addresses that need to be sent to
+
+	return SendEmailAckPayload{Status: StatusOK, MessageID: res.MessageID, DeliveredTo: res.DeliveredTo, QueuedFor: res.QueuedFor}, nil
 }
 
 // HandleFetchEmail processes a fetch request and returns FetchEmailResponsePayload or an ErrorPayload

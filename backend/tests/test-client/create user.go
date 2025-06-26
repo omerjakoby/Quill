@@ -24,6 +24,12 @@ type CreateUserResponse struct {
 }
 
 func main() {
+	createUser()
+}
+
+func createUser() {
+    // … existing implementation …
+}
 	// Prompt for user details
 	var quillMail, email, uid, authToken string
 	quillMail = "omer~quillmail.xyz" // Replace with actual input or prompt

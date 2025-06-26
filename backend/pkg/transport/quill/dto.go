@@ -113,6 +113,7 @@ type SendEmailAckPayload struct {
 	Status      string   `json:"status"`
 	MessageID   string   `json:"message_id,omitempty"`
 	DeliveredTo []string `json:"delivered_to,omitempty"`
+	QueuedFor   []string `json:"queued_for,omitempty"`
 }
 
 // -------------------- Key Discovery --------------------
