@@ -3,13 +3,14 @@ package db
 import (
 	"context"
 	"fmt"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"quill/pkg/models"
 	"quill/pkg/service/auth"
 	"quill/pkg/transport/quill"
+
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // EnsureUniqueUserIndexes sets up unique indexes for userQuillMail
@@ -72,13 +73,13 @@ func (m *MongoDB) MessageIDExists(ctx context.Context, messageID string) (bool, 
 // The provided authToken must be a valid Firebase ID token and match the user's UID.
 func (m *MongoDB) CreateUserDoc(ctx context.Context, user *models.User, authToken string, authSvc quill.AuthService) (bool, error) {
 	// Verify the auth token
-	authCtx, err := authSvc.Authenticate(ctx, authToken)
+	err := authSvc.Authenticate(ctx, authToken)
 	if err != nil {
 		return false, fmt.Errorf("error authenticating token: %w", err)
 	}
 
 	// Extract the user ID from the authenticated context
-	userID, ok := auth.UserIDFromContext(authCtx)
+	userID, ok := auth.UserIDFromContext(ctx)
 	if !ok {
 		return false, fmt.Errorf("no user ID found in authenticated context")
 	}
