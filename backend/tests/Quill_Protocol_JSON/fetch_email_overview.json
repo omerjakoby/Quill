@@ -1,0 +1,34 @@
+{
+  "type": "FETCH_EMAIL",
+  "timestamp": "2025-06-28T00:03:00Z",
+  "payload": {
+    "mode": "overview",
+    "folder": "inbox",
+    "limit": 20,
+    "offset": 0,
+    "filters": {
+      "search": {
+        "keywords": ["project", "deadline"],
+        "exact_phrase": "team meeting",
+        "from": ["alice~quillmail.com"],
+        "to": ["itamar~quillmail.com"]
+      },
+      "flags": {
+        "has_attachments": true,
+        "is_read": false,
+        "is_starred": true
+      },
+      "date_range": {
+        "after": "2025-06-01T00:00:00Z",
+        "before": "2025-06-25T00:00:00Z"
+      }
+    }
+  },
+  "signature": "",
+  "anti_spam": {
+    "type": "hashcash",
+    "resource": "alice~quillmail.com",
+    "bits": 22,
+    "nonce": "000abc123"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "type": "FETCH_EMAIL",
+  "timestamp": "2025-06-28T00:04:00Z",
+  "payload": {
+    "mode": "thread",
+    "thread_id": "thread-495abc7d",
+    "limit": 5,
+    "offset": 0
+  },
+  "signature": "",
+  "anti_spam": {
+    "type": "hashcash",
+    "resource": "alice~quillmail.com",
+    "bits": 22,
+    "nonce": "000abc123"
+  }
+}
