@@ -203,7 +203,7 @@ The PING packet can be sent before the Quill protocol Handshake is completed, as
 
 **Purpose**: Establish a connection and negotiate protocol version, feature capabilities, and anti-spam requirements before any user-specific operations.
 
-* **supported_versions**: the handshake sends the supported version's of Quill protocol, the ack respond with the most recent one he also support.
+* **supported_versions**: The initiator sends a list of its supported Quill protocol versions. The responder replies with the highest version that both parties support.
 * **identity**: Domain or user entity initiating the connection; For Server -> Server this will be the domain name; For Client -> Server this will be the user's email address
 * **encryption**: End-to-end encryption support flag (not available in v1).
 * **supported\_anti\_spam**: List of anti-spam methods the initiator can perform (default v1: `hashcash`).
@@ -222,7 +222,7 @@ The PING packet can be sent before the Quill protocol Handshake is completed, as
       "encryption": false
     },
     "supported_anti_spam": ["hashcash"]
-  },
+  }
 }
 ```
 
@@ -243,7 +243,7 @@ The PING packet can be sent before the Quill protocol Handshake is completed, as
     "options": {
       "encryption": false
     }
-  },
+  }
 }
 ```
 
@@ -258,7 +258,7 @@ The PING packet can be sent before the Quill protocol Handshake is completed, as
     "message": "Protocol v2.0 not supported.",
     "context": "HANDSHAKE",
     "temporary": false
-  },
+  }
 }
 ```
 
@@ -277,7 +277,7 @@ Servers may require client authentication; protocol defines a generic structure.
   "payload": {
     "method": "session_token",
     "credentials": { "token": "abc123-session-token" }
-  },
+  }
 }
 ```
 
@@ -291,7 +291,7 @@ Servers may require client authentication; protocol defines a generic structure.
     "accepted": true,
     "session": { "expires_in": 3600, "identity": "alice~quillmail.com" }
   },
-  "signature": "...",
+  "signature": "..."
 }
 ```
 
@@ -346,7 +346,7 @@ Servers may require client authentication; protocol defines a generic structure.
     ],
     "options": {
       "expires_in_seconds": 7200,
-      "one_time": true,
+      "one_time": true
     }
   },
   "signature": "...",
@@ -415,16 +415,16 @@ Servers may require client authentication; protocol defines a generic structure.
             "keywords":       ["project", "deadline"],
             "exact_phrase":    "team meeting",
             "from":           ["alice~…"],
-            "to":             ["itamar~…"],
+            "to":             ["itamar~…"]
         },
         "flags": {
             "has_attachments": true,
             "is_read": false,
-            "is_starred": true,
+            "is_starred": true
         },
         "date_range": {
             "after": "2025-06-01T00:00:00Z",
-            "before": "2025-06-25T00:00:00Z",
+            "before": "2025-06-25T00:00:00Z"
         }
     }
   },
@@ -468,8 +468,8 @@ Servers may require client authentication; protocol defines a generic structure.
           "snippet": "Sure, let's meet at noon.",
           "flags": {
             "has_attachments": true,
-            "is_starred": true,
-          },
+            "is_starred": true
+          }
         },
         "count": 5,
         "unread_count": 2
@@ -479,13 +479,13 @@ Servers may require client authentication; protocol defines a generic structure.
     "limit": 20,
     "offset": 0
   },
-  "signature": "...",
+  "signature": "..."
 }
 ```
 
 ---
 
-### FETCH\_EMAIL Thread  (CLient -> Server)
+### FETCH\_EMAIL Thread  (Client -> Server)
 
 **Fields in `FETCH_EMAIL.payload`:**
 
@@ -505,7 +505,7 @@ Servers may require client authentication; protocol defines a generic structure.
     "offset": 0
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "alice~quillmail.com", "bits": 22, "nonce": "000abc123"},
+  "anti_spam": { "type": "hashcash", "resource": "alice~quillmail.com", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
@@ -551,15 +551,15 @@ Servers may require client authentication; protocol defines a generic structure.
         "timestamp": "2025-06-22T18:45:00Z",
         "flags": {
             "is_read": false,
-            "is_starred": true,
-        },
+            "is_starred": true
+        }
       }
     ],
     "total_messages": 5,
     "limit": 5,
     "offset": 0
   },
-    "signature": "...",
+    "signature": "..."
 }
 ```
 
@@ -683,7 +683,7 @@ Because this endpoint reveals the existence of user accounts, each server operat
 {
   "type": "FETCH_KEYS",
   "timestamp": "2025-06-22T17:30:00Z",
-  "payload": { "query": "alice~quillmail.com" },
+  "payload": { "query": "alice~quillmail.com" }
 }
 ```
 
@@ -697,7 +697,7 @@ Because this endpoint reveals the existence of user accounts, each server operat
     "email": "alice~quillmail.com",
     "public_key": "base64-public-key",
     "expires": "2026-01-01T00:00:00Z"
-  },
+  }
 }
 ```
 
@@ -717,7 +717,7 @@ The signature field is only present if the error occurs after a client has succe
     "temporary": true,
     "retry_after": 60
   },
-  "signature": "...",
+  "signature": "..."
 }
 ```
 
