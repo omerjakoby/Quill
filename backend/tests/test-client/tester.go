@@ -37,7 +37,7 @@ type AntiSpamProof struct {
 func main() {
 	// Flags: server address and JSON directory
 	addr := flag.String("addr", "localhost:9876", "server address (host:port)")
-	jsonDir := flag.String("dir", "./tests/requests", "path to JSON request files")
+	jsonDir := flag.String("dir", "tests/Quill_Protocol_JSON", "path to JSON request files")
 	certFile := flag.String("cert", "../certificate/quill.crt", "path to CA certificate PEM")
 	flag.Parse()
 
