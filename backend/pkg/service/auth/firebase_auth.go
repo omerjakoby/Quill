@@ -43,7 +43,7 @@ func (s *firebaseAuthService) Authenticate(ctx context.Context, idToken string) 
 }
 
 func UserIDFromContext(ctx context.Context) (string, bool) {
-	v := ctx.Value("userID")
+	v := ctx.Value("AuthInfoKey")
 	id, ok := v.(string)
 	return id, ok
 }

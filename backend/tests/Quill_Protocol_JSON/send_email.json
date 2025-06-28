@@ -2,7 +2,7 @@
   "type": "SEND_EMAIL",
   "timestamp": "2025-06-28T00:02:00Z",
   "payload": {
-    "message_id": "msg-1234",
+    "message_id": "",
     "thread_id": "",
     "from": "alice~quillmail.com",
     "to": ["bob~quillmail.com"],

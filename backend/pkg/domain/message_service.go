@@ -320,7 +320,7 @@ func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailReques
 }
 
 func (m *MongoEmailService) FetchThread(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
-	userID, ok := ctx.Value("userID").(string)
+	userID, ok := ctx.Value("AuthInfoKey").(string)
 	if !ok {
 		return FetchEmailResult{}, ErrUserNotAuthenticated
 	}
@@ -478,7 +478,7 @@ func mapRawMessagesToDomain(rawMessages []bson.M, readStatusMap map[string]bool)
 }
 
 func (m *MongoEmailService) FetchFolder(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
-	userID, ok := ctx.Value("userID").(string)
+	userID, ok := ctx.Value("AuthInfoKey").(string)
 	if !ok {
 		return FetchEmailResult{}, ErrUserNotAuthenticated
 	}
