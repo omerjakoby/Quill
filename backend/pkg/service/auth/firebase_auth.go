@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"quill/pkg/domain"
 	"quill/pkg/transport/quill"
 	"strings"
 
@@ -32,7 +33,7 @@ func (s *firebaseAuthService) Authenticate(ctx context.Context, idToken string) 
 	}
 
 	// grab the mutable AuthInfo you seeded in protocol_handler.Serve()
-	ai, ok := ctx.Value(quill.AuthInfoKey{}).(*quill.AuthInfo)
+	ai, ok := ctx.Value(domain.AuthInfoKey{}).(*domain.AuthInfo)
 	if !ok {
 		return fmt.Errorf("authentication context not initialized")
 	}
@@ -40,12 +41,6 @@ func (s *firebaseAuthService) Authenticate(ctx context.Context, idToken string) 
 	// store the UID for downstream handlers
 	ai.UserID = token.UID
 	return nil
-}
-
-func UserIDFromContext(ctx context.Context) (string, bool) {
-	v := ctx.Value("AuthInfoKey")
-	id, ok := v.(string)
-	return id, ok
 }
 
 func InitAuthService(ctx context.Context, credPath string) (quill.AuthService, error) {

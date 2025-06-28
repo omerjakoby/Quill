@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net"
+	"quill/pkg/domain"
 )
 
 //TODO add checking for signature
@@ -33,16 +34,10 @@ func NewProtocolHandler(svc *ServiceHandler) *ProtocolHandler {
 	return &ProtocolHandler{service: svc}
 }
 
-type AuthInfoKey struct{}
-
-type AuthInfo struct {
-	UserID string
-}
-
 // Serve starts processing on the provided connection until closed or fatal error
 func (p *ProtocolHandler) Serve(conn net.Conn) {
 	defer conn.Close()
-	ctx := context.WithValue(context.Background(), AuthInfoKey{}, &AuthInfo{})
+	ctx := context.WithValue(context.Background(), domain.AuthInfoKey{}, &domain.AuthInfo{})
 	phase := phaseAwaitHandshake
 
 	for {

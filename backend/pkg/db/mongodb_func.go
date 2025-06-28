@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"quill/pkg/domain"
 	"quill/pkg/models"
-	"quill/pkg/service/auth"
 	"quill/pkg/transport/quill"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -79,7 +79,7 @@ func (m *MongoDB) CreateUserDoc(ctx context.Context, user *models.User, authToke
 	}
 
 	// Extract the user ID from the authenticated context
-	userID, ok := auth.UserIDFromContext(ctx)
+	userID, ok := domain.UserIDFromContext(ctx)
 	if !ok {
 		return false, fmt.Errorf("no user ID found in authenticated context")
 	}
