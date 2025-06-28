@@ -7,7 +7,7 @@ import (
 
 // authService authenticates tokens and returns a context enriched with identity.
 type AuthService interface {
-	Authenticate(ctx context.Context, token string) (context.Context, error)
+	Authenticate(ctx context.Context, idToken string) error
 }
 
 // EmailService handles core email-domain operations: send, fetch, update.

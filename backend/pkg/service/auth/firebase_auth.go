@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	quill "quill/pkg/transport/quill"
+	"quill/pkg/transport/quill"
 	"strings"
 
 	firebase "firebase.google.com/go"
@@ -13,32 +13,37 @@ import (
 	"google.golang.org/api/option"
 )
 
-
 type firebaseAuthService struct {
 	firebaseAuthClient *auth.Client
 }
-
 
 func NewFirebaseAuthService(client *auth.Client) quill.AuthService {
 	return &firebaseAuthService{firebaseAuthClient: client}
 }
 
-func (s *firebaseAuthService) Authenticate(
-	ctx context.Context,
-	idToken string,
-) (context.Context, error) {
+func (s *firebaseAuthService) Authenticate(ctx context.Context, idToken string) error {
+	// strip any leading "Bearer "
 	idToken = strings.TrimPrefix(idToken, "Bearer ")
+
+	// verify with Firebase
 	token, err := s.firebaseAuthClient.VerifyIDToken(ctx, idToken)
 	if err != nil {
-		return ctx, fmt.Errorf("failed to verify Firebase ID token: %w", err)
+		return fmt.Errorf("failed to verify Firebase ID token: %w", err)
 	}
 
-	// Token is valid. Attach the Firebase User ID (UID) to the context.
-	return context.WithValue(ctx, "userID", token.UID), nil
+	// grab the mutable AuthInfo you seeded in protocol_handler.Serve()
+	ai, ok := ctx.Value(quill.AuthInfoKey{}).(*quill.AuthInfo)
+	if !ok {
+		return fmt.Errorf("authentication context not initialized")
+	}
+
+	// store the UID for downstream handlers
+	ai.UserID = token.UID
+	return nil
 }
 
 func UserIDFromContext(ctx context.Context) (string, bool) {
-	v := ctx.Value("userID")
+	v := ctx.Value("AuthInfoKey")
 	id, ok := v.(string)
 	return id, ok
 }

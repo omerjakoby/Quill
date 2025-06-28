@@ -33,10 +33,16 @@ func NewProtocolHandler(svc *ServiceHandler) *ProtocolHandler {
 	return &ProtocolHandler{service: svc}
 }
 
+type AuthInfoKey struct{}
+
+type AuthInfo struct {
+	UserID string
+}
+
 // Serve starts processing on the provided connection until closed or fatal error
 func (p *ProtocolHandler) Serve(conn net.Conn) {
 	defer conn.Close()
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), AuthInfoKey{}, &AuthInfo{})
 	phase := phaseAwaitHandshake
 
 	for {

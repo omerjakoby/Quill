@@ -1,0 +1,11 @@
+{
+  "type": "HANDSHAKE",
+  "timestamp": "2025-06-28T00:00:00Z",
+  "payload": {
+    "protocol": "quill",
+    "supported_versions": ["1.0"],
+    "identity": "alice~quillmail.com",
+    "options": { "encryption": false },
+    "supported_anti_spam": ["hashcash"]
+  }
+}

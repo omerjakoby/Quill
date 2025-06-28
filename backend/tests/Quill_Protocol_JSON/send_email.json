@@ -1,0 +1,18 @@
+{
+  "type": "SEND_EMAIL",
+  "timestamp": "2025-06-28T00:02:00Z",
+  "payload": {
+    "message_id": "",
+    "thread_id": "",
+    "from": "alice~quillmail.com",
+    "to": ["bob~quillmail.com"],
+    "cc": [],
+    "bcc": [],
+    "subject": "Hello from Quill",
+    "body": { "text": "Hi Bob, this is a test.", "html": "<p>Hi Bob, this is a test.</p>" },
+    "attachments": [],
+    "options": { "expires_in_seconds": 3600 }
+  },
+  "signature": "",
+  "anti_spam": { "type": "hashcash", "resource": "msg-1234", "bits": 22, "nonce": "00000000" }
+}

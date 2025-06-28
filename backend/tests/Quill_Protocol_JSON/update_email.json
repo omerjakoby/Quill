@@ -1,0 +1,10 @@
+{
+  "type": "UPDATE_EMAIL",
+  "timestamp": "2025-06-28T00:04:00Z",
+  "payload": {
+    "message_ids": ["msg-1234"],
+    "updates": { "folder": "archive", "flags": { "is_read": true } }
+  },
+  "signature": "",
+  "anti_spam": { "type": "hashcash", "resource": "msg-1234", "bits": 22, "nonce": "00000000" }
+}

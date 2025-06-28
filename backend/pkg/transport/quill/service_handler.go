@@ -22,11 +22,10 @@ func NewServiceHandler(as AuthService, es EmailService, ks KeyService) *ServiceH
 
 // HandleAuth authenticates the client and returns AuthAckPayload or an ErrorPayload
 func (s *ServiceHandler) HandleAuth(ctx context.Context, payload AuthPayload) (AuthAckPayload, *ErrorPayload) {
-	newCtx, err := s.authSvc.Authenticate(ctx, payload.Credentials.Token)
+	err := s.authSvc.Authenticate(ctx, payload.Credentials.Token)
 	if err != nil {
 		return AuthAckPayload{}, &ErrorPayload{Code: ErrorCodeInvalidToken, Message: err.Error(), Context: PacketTypeAuth}
 	}
-	_ = newCtx
 	//TODO add a check to validate email address from the ctx context and make sure its for the right userID
 	//TODO remove the hardcoded expiresIn and have an actual logical amount (need to think what it is)
 	sess := SessionInfo{ExpiresIn: 3600, Identity: payload.Credentials.Token}
