@@ -2,20 +2,23 @@ package quill
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"github.com/umahmood/hashcash"
 	"io"
 	"net"
 	"quill/pkg/domain"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 //TODO add checking for signature
 //TODO add checking for anti_spam
 //TODO add context Cancellation/timeouts
-//TODO add replay protection
 //TODO add graceful shutdown
 
 // connectionPhase represents the current stage of the protocol exchange
@@ -49,9 +52,18 @@ func (p *ProtocolHandler) Serve(conn net.Conn) {
 			return // connection closed or framing error
 		}
 
+		// relay protection: enforce timestamp skew
+		if !p.validateTimestamp(pkt.Timestamp, conn) {
+			return
+		}
+
 		if pkt.Type == PacketTypePing {
 			p.parsePingPayload(conn, pkt)
 			continue
+		}
+		// validate the anti_spam
+		if !p.validateAntiSpam(pkt, conn) {
+			return
 		}
 
 		switch phase {
@@ -70,31 +82,6 @@ func (p *ProtocolHandler) Serve(conn net.Conn) {
 			}
 		}
 	}
-}
-
-// readPacket handles length-prefixed framing and unmarshals JSON to Packet
-func (p *ProtocolHandler) readPacket(conn net.Conn) (*Packet, error) {
-	// 1. Read 4-byte length prefix
-	lenBuf := make([]byte, 4)
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, err
-	}
-	length := binary.BigEndian.Uint32(lenBuf)
-
-	// 2. Read JSON body
-	body := make([]byte, length)
-	if _, err := io.ReadFull(conn, body); err != nil {
-		p.sendError(conn, ErrorCodeRequestTimeout, err.Error())
-		return nil, err
-	}
-
-	// 3. Unmarshal to Packet
-	var pkt Packet
-	if err := json.Unmarshal(body, &pkt); err != nil {
-		p.sendError(conn, ErrorCodeMalformedPacket, err.Error())
-		return nil, err
-	}
-	return &pkt, nil
 }
 
 // handleStateHandshake parses and executes the transport-level handshake
@@ -307,10 +294,35 @@ func (p *ProtocolHandler) parseUpdateEmailPayload(ctx context.Context, conn net.
 	p.sendResponse(conn, &Packet{Type: PacketTypeUpdateEmailAck, Payload: data})
 }
 
+// readPacket handles length-prefixed framing and unmarshals JSON to Packet
+func (p *ProtocolHandler) readPacket(conn net.Conn) (*Packet, error) {
+	// 1. Read 4-byte length prefix
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, err
+	}
+	length := binary.BigEndian.Uint32(lenBuf)
+
+	// 2. Read JSON body
+	body := make([]byte, length)
+	if _, err := io.ReadFull(conn, body); err != nil {
+		p.sendError(conn, ErrorCodeRequestTimeout, err.Error())
+		return nil, err
+	}
+
+	// 3. Unmarshal to Packet
+	var pkt Packet
+	if err := json.Unmarshal(body, &pkt); err != nil {
+		p.sendError(conn, ErrorCodeMalformedPacket, err.Error())
+		return nil, err
+	}
+	return &pkt, nil
+}
+
 // sendResponse marshals a Packet and writes it with framing
 func (p *ProtocolHandler) sendResponse(conn net.Conn, pkt *Packet) error {
-	//TODO add timestamp
 	//TODO add signature
+	pkt.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	raw, _ := json.Marshal(pkt)
 	buf := make([]byte, 4+len(raw))
 	binary.BigEndian.PutUint32(buf, uint32(len(raw)))
@@ -326,4 +338,66 @@ func (p *ProtocolHandler) sendError(conn net.Conn, code, msg string) {
 	b, _ := json.Marshal(errPayload)
 	pkt := &Packet{Type: PacketTypeError, Payload: b}
 	_ = p.sendResponse(conn, pkt)
+}
+
+// validateTimestamp checks packet timestamp against current time (±60s) and sends error on failure
+func (p *ProtocolHandler) validateTimestamp(ts string, conn net.Conn) bool {
+	now := time.Now().UTC()
+	pktTime, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		p.sendError(conn, ErrorCodeInvalidTimestamp, "invalid timestamp format")
+		return false
+	}
+	// allow up to one minute skew in either direction
+	if now.Sub(pktTime) > time.Minute || pktTime.Sub(now) > time.Minute {
+		p.sendError(conn, ErrorCodeInvalidTimestamp, "timestamp out of acceptable range")
+		return false
+	}
+	return true
+}
+
+// validateAntiSpam enforces per-packet anti-spam proof based on default policy
+func (p *ProtocolHandler) validateAntiSpam(pkt *Packet, conn net.Conn) bool {
+	policy, ok := DefaultRequiredAntiSpam[pkt.Type]
+	// if no policy or policy set to none, skip validation
+	if !ok || policy.Type == "none" {
+		return true
+	}
+	// proof is required
+	if pkt.AntiSpam == nil {
+		p.sendError(conn, ErrorCodeSpamProofRequired, "missing anti_spam proof")
+		return false
+	}
+	// proof parameters check
+	proof := pkt.AntiSpam
+	if proof.Type != policy.Type || proof.Bits != policy.Bits {
+		p.sendError(conn, ErrorCodeInvalidSpamProof, "invalid anti_spam proof parameters")
+		return false
+	}
+
+	hash := sha256.Sum256(pkt.Payload)
+	resource := hex.EncodeToString(hash[:])
+
+	if proof.Resource != resource {
+		p.sendError(conn, ErrorCodeInvalidSpamProof, "anti_spam resource mismatch")
+		return false
+	}
+
+	hc, err := hashcash.New(&hashcash.Resource{
+		Data:          resource,
+		ValidatorFunc: func(res string) bool { return true },
+	}, &hashcash.Config{
+		Bits: policy.Bits,
+	})
+	if err != nil {
+		p.sendError(conn, ErrorCodeInternalServerError, "hashcash init failed")
+		return false
+	}
+	valid, err := hc.Verify(proof.Nonce)
+	if err != nil || !valid {
+		p.sendError(conn, ErrorCodeInvalidSpamProof, "hashcash validation failed")
+		return false
+	}
+
+	return true
 }

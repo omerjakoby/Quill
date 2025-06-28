@@ -27,8 +27,7 @@ func (s *ServiceHandler) HandleAuth(ctx context.Context, payload AuthPayload) (A
 		return AuthAckPayload{}, &ErrorPayload{Code: ErrorCodeInvalidToken, Message: err.Error(), Context: PacketTypeAuth}
 	}
 	//TODO add a check to validate email address from the ctx context and make sure its for the right userID
-	//TODO remove the hardcoded expiresIn and have an actual logical amount (need to think what it is)
-	sess := SessionInfo{ExpiresIn: 3600, Identity: payload.Credentials.Token}
+	sess := SessionInfo{ExpiresIn: DefaultSessionExpiresIn, Identity: payload.Credentials.Token}
 	return AuthAckPayload{Accepted: true, Session: sess}, nil
 }
 

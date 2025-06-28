@@ -7,6 +7,7 @@ require (
 	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
+	github.com/umahmood/hashcash v0.0.0-20180415142835-f4a6a1a056f9
 	go.mongodb.org/mongo-driver v1.17.4
 	golang.org/x/net v0.40.0
 	google.golang.org/api v0.231.0
@@ -40,6 +41,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
+	github.com/mattn/go-sqlite3 v1.14.28 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect

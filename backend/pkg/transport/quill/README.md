@@ -94,9 +94,7 @@ This proves that the client has expended computational resources, making bulk sp
 The anti_spam object for a hashcash proof must contain the following fields:
 
 * **`type`**: Must be `"hashcash"`.
-* **`resource`**: The unique string identifying the operation being protected. This prevents the replay of the same proof for different actions. The value depends on the operation:
-  * For `SEND_EMAIL`, the resource **MUST** be the `message_id`.
-  * For `FETCH_EMAIL`, the resource **MUST** be the authenticated user's identity (e.g., `alice~quillmail.com`).
+* **`resource`**: The lowercase hex-encoded SHA-256 digest of the packet’s payload. This prevents the replay of the same proof for different actions.
 * **`bits`**: The number of leading zero bits required in the hash, as specified by the server in the `HANDSHAKE_ACK`. This determines the difficulty.
 * **`nonce`**: The counter value found by the client that satisfies the proof-of-work challenge.
 
@@ -350,7 +348,7 @@ Servers may require client authentication; protocol defines a generic structure.
     }
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "msg-123", "bits": 22, "nonce": "000abc123"}
+  "anti_spam": { "type": "hashcash", "resource": "...", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
@@ -429,7 +427,7 @@ Servers may require client authentication; protocol defines a generic structure.
     }
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "omer~quillmail.xyz", "bits": 22, "nonce": "000abc123"}
+  "anti_spam": { "type": "hashcash", "resource": "...", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
@@ -505,7 +503,7 @@ Servers may require client authentication; protocol defines a generic structure.
     "offset": 0
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "alice~quillmail.com", "bits": 22, "nonce": "000abc123"}
+  "anti_spam": { "type": "hashcash", "resource": "...", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
