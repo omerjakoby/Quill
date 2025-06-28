@@ -1,5 +1,42 @@
 package quill
 
+// ——————————————————————————————
+// Protocol Handshake settings
+// ——————————————————————————————
+
+// Supported protocol versions (in order of stability)
+var SupportedProtocolVersions = []int{1}
+
+// DefaultProtocolVersion is the highest stable version clients will negotiate.
+const DefaultProtocolVersion = 1
+
+// AntiSpamPolicy tells you which anti-spam scheme & parameters to enforce per packet type.
+var DefaultRequiredAntiSpam = map[string]AntiSpamPolicy{
+	PacketTypeSendEmail:  {Type: "hashcash", Bits: 22},
+	PacketTypeFetchEmail: {Type: "hashcash", Bits: 22},
+	PacketTypeFetchKeys:  {Type: "none"},
+}
+
+// Which features we offer at handshake time.
+var DefaultHandshakeOptions = struct {
+	Encryption bool
+}{
+	Encryption: false,
+}
+
+// ——————————————————————————————
+// Session settings
+// ——————————————————————————————
+
+const (
+	// DefaultSessionExpiresIn is how long (in seconds) new sessions last if caller
+	DefaultSessionExpiresIn = 3600
+)
+
+// ——————————————————————————————
+// Quill Protocol Const
+// ——————————————————————————————
+
 // Protocol identification
 const (
 	ProtocolName    = "quill"

@@ -58,7 +58,7 @@ type SendEmailResult struct {
 
 // ------------------ FETCH Request ------------------
 
-// FetchMode indicates overview vs thread fetch modes.
+// FetchEmailMode indicates overview vs thread fetch modes.
 type FetchEmailMode string
 
 const (

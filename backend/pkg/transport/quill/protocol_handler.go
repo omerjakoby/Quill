@@ -7,6 +7,9 @@ import (
 	"io"
 	"net"
 	"quill/pkg/domain"
+	"slices"
+	"strconv"
+	"strings"
 )
 
 //TODO add checking for signature
@@ -47,13 +50,13 @@ func (p *ProtocolHandler) Serve(conn net.Conn) {
 		}
 
 		if pkt.Type == PacketTypePing {
-			p.parsePingPayload(ctx, conn, pkt)
+			p.parsePingPayload(conn, pkt)
 			continue
 		}
 
 		switch phase {
 		case phaseAwaitHandshake:
-			if ok := p.handleStateHandshake(ctx, conn, pkt); !ok {
+			if ok := p.handleStateHandshake(conn, pkt); !ok {
 				return // handshake failed
 			}
 			phase = phaseAwaitAuthOrKeys
@@ -96,8 +99,8 @@ func (p *ProtocolHandler) readPacket(conn net.Conn) (*Packet, error) {
 
 // handleStateHandshake parses and executes the transport-level handshake
 // Returns true if handshake succeeded and we should continue
-func (p *ProtocolHandler) handleStateHandshake(ctx context.Context, conn net.Conn, pkt *Packet) bool {
-	return p.parseHandshakePayload(ctx, conn, pkt)
+func (p *ProtocolHandler) handleStateHandshake(conn net.Conn, pkt *Packet) bool {
+	return p.parseHandshakePayload(conn, pkt)
 }
 
 // handleStateAuthOrKeys processes AUTH or FETCH_KEYS and returns next phase
@@ -140,7 +143,7 @@ func (p *ProtocolHandler) handleStateRequest(ctx context.Context, conn net.Conn,
 }
 
 // parsePingPayload handles a client PING by echoing its timestamp back in a PING_RESPONSE.
-func (p *ProtocolHandler) parsePingPayload(ctx context.Context, conn net.Conn, pkt *Packet) {
+func (p *ProtocolHandler) parsePingPayload(conn net.Conn, pkt *Packet) {
 	// pkt.Timestamp holds the original client-sent time
 	ack := PingAckPayload{
 		EchoTimestamp: pkt.Timestamp,
@@ -156,50 +159,68 @@ func (p *ProtocolHandler) parsePingPayload(ctx context.Context, conn net.Conn, p
 }
 
 // parseHandshakePayload unmarshals HANDSHAKE and executes transport handshake
-func (p *ProtocolHandler) parseHandshakePayload(ctx context.Context, conn net.Conn, pkt *Packet) bool {
+func (p *ProtocolHandler) parseHandshakePayload(conn net.Conn, pkt *Packet) bool {
 	var payload HandshakePayload
 	if err := json.Unmarshal(pkt.Payload, &payload); err != nil {
 		p.sendError(conn, ErrorCodeMalformedPacket, "invalid handshake payload: "+err.Error())
 		return false
 	}
-	return p.executeTransportHandshake(ctx, conn, payload)
+	return p.executeTransportHandshake(conn, payload)
 }
 
 // executeTransportHandshake validates and responds to the handshake
-func (p *ProtocolHandler) executeTransportHandshake(ctx context.Context, conn net.Conn, payload HandshakePayload) bool {
+func (p *ProtocolHandler) executeTransportHandshake(conn net.Conn, payload HandshakePayload) bool {
+	// Protocol name check
 	if payload.Protocol != ProtocolName {
 		p.sendError(conn, ErrorCodeUnsupportedVersion, "unsupported protocol: "+payload.Protocol)
 		return false
 	}
-	// verify version support
-	//TODO change the constant file ProtocolVersion to list and change the logic to pick the highest stable version
-	supported := false
-	for _, v := range payload.SupportedVersions {
-		if v == ProtocolVersion {
-			supported = true
-			break
+
+	// Version negotiation, picking the highest version
+	var negotiatedVersion string
+	var highestNum float64
+
+	for _, vs := range payload.SupportedVersions {
+		// parse "1.0", "2.1", etc.
+		num, err := strconv.ParseFloat(vs, 64)
+		if err != nil {
+			continue
+		}
+		major := int(num)
+
+		// check if we support that major version
+		supported := slices.Contains(SupportedProtocolVersions, major)
+		if !supported {
+			continue
+		}
+
+		// keep the highest one
+		if negotiatedVersion == "" || num > highestNum {
+			negotiatedVersion = vs
+			highestNum = num
 		}
 	}
-	if !supported {
-		p.sendError(conn, ErrorCodeUnsupportedVersion, "protocol version not supported")
+
+	if negotiatedVersion == "" {
+		p.sendError(conn, ErrorCodeUnsupportedVersion,
+			"protocol version not supported: "+strings.Join(payload.SupportedVersions, ", "))
 		return false
 	}
+
 	// build and send ACK
-	//TODO change the RequiredAntiSpam to not be hardcoded and defined elsewhere
-	//TODO change the options to not be hardcoded
 	ack := HandshakeAckPayload{
-		Accepted: true,
-		Version:  ProtocolVersion,
-		RequiredAntiSpam: map[string]AntiSpamPolicy{
-			PacketTypeSendEmail:  {Type: "hashcash", Bits: 22},
-			PacketTypeFetchEmail: {Type: "hashcash", Bits: 22},
-			PacketTypeFetchKeys:  {Type: "none"},
-		},
+		Accepted:         true,
+		Version:          negotiatedVersion,
+		RequiredAntiSpam: DefaultRequiredAntiSpam,
 		Options: struct {
 			Encryption bool `json:"encryption"`
-		}{Encryption: payload.Options.Encryption},
+		}{Encryption: payload.Options.Encryption && DefaultHandshakeOptions.Encryption},
 	}
-	data, _ := json.Marshal(ack)
+	data, err := json.Marshal(ack)
+	if err != nil {
+		p.sendError(conn, ErrorCodeInternalServerError, "failed to marshal handshake ack: "+err.Error())
+		return false
+	}
 	p.sendResponse(conn, &Packet{Type: PacketTypeHandshakeAck, Payload: data})
 	return true
 }
