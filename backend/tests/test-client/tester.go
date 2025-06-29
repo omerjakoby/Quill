@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,6 +17,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/umahmood/hashcash"
 )
 
 // Packet matches the Quill DTO definition in protocol
@@ -28,10 +32,14 @@ type Packet struct {
 
 // AntiSpamProof carries proof-of-work info
 type AntiSpamProof struct {
-	Type     string `json:"type"`
-	Resource string `json:"resource"`
-	Bits     int    `json:"bits"`
-	Nonce    string `json:"nonce"`
+	typeOfProof string
+	resource    string
+	bits        int
+	nonce       string
+}
+
+func newAntiSpam(type1 string, resource1 string, bits1 int) *AntiSpamProof {
+	return &AntiSpamProof{typeOfProof: type1, resource: resource1, bits: bits1, nonce: ""}
 }
 
 func main() {
@@ -175,4 +183,24 @@ func prettyPrint(prefix string, pkt Packet) {
 	fmt.Printf("%s Packet: %s\n", prefix, pkt.Type)
 	b, _ := json.MarshalIndent(pkt, "", "  ")
 	fmt.Println(string(b))
+}
+
+func addHashcash(pkt Packet, bits int) {
+	hash := sha256.Sum256(pkt.Payload)
+	resource := hex.EncodeToString(hash[:])
+
+	hc, err := hashcash.New(&hashcash.Resource{
+		Data:          resource,
+		ValidatorFunc: func(res string) bool { return true },
+	}, &hashcash.Config{
+		Bits: bits,
+	})
+	if err != nil {
+		log.Fatalf("hashcash init failed")
+	}
+	solution, err := hc.Compute()
+	if err != nil {
+		log.Fatalf("hashcash failed")
+	}
+	pkt.AntiSpam.nonce = solution
 }
