@@ -1063,10 +1063,16 @@ func (m *MongoEmailService) countUniqueThreads(ctx context.Context, filter bson.
 		return 0, nil
 	}
 
-	if count, ok := result[0]["totalThreads"].(int32); ok {
-		return int64(count), nil
-	}
-
+    switch count := result[0]["totalThreads"].(type) {
+    case int32:
+        return int64(count), nil
+    case int64:
+        return count, nil
+    case float64:
+        return int64(count), nil
+    default:
+        return 0, fmt.Errorf("unexpected count type: %T", count)
+    }
 	return 0, nil
 }
 
