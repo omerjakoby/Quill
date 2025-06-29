@@ -101,7 +101,7 @@ The anti_spam object for a hashcash proof must contain the following fields:
 ```json
 "anti_spam": {
   "type": "hashcash",
-  "resource": "unique-operation-identifier",
+  "resource": "sha-256(Payload)",
   "bits": 22,
   "nonce": "000abc123"
 }
@@ -348,7 +348,7 @@ Servers may require client authentication; protocol defines a generic structure.
     }
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "...", "bits": 22, "nonce": "000abc123"}
+  "anti_spam": { "type": "hashcash", "resource": "sha-256(Payload)", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
@@ -427,7 +427,7 @@ Servers may require client authentication; protocol defines a generic structure.
     }
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "...", "bits": 22, "nonce": "000abc123"}
+  "anti_spam": { "type": "hashcash", "resource": "sha-256(Payload)", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
@@ -503,7 +503,7 @@ Servers may require client authentication; protocol defines a generic structure.
     "offset": 0
   },
   "signature": "...",
-  "anti_spam": { "type": "hashcash", "resource": "...", "bits": 22, "nonce": "000abc123"}
+  "anti_spam": { "type": "hashcash", "resource": "sha-256(Payload)", "bits": 22, "nonce": "000abc123"}
 }
 ```
 
