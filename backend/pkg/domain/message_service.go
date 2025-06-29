@@ -792,14 +792,14 @@ func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
 			ID:       getStringFromBson(bsonMsg, "messageId"),
 			ThreadID: getThreadIDFromBson(bsonMsg),
 			From:     getStringFromBson(bsonMsg, "fromMail"),
-			Subject:  getStringFromBson(bsonMsg, "subject"),
-			Snippet: func() string {
-				txt := getTextBodyFromBson(bsonMsg)
-				if len(txt) > 100 {
-					return txt[:100]
-				}
-				return ""
-			}(),
+            Subject:  getStringFromBson(bsonMsg, "subject"),
+            Snippet: func() string {
+                txt := getTextBodyFromBson(bsonMsg)
+                if len(txt) <= 100 {
+                    return txt
+                }
+                return txt[:100] + "..."
+            }(),
 			Timestamp: getTimeFromBson(bsonMsg, "sentAt"),
 			Flags: EmailFlags{
 				IsRead: read,
