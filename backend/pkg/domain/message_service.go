@@ -59,15 +59,20 @@ func NewMongoEmailService(db *mongo.Database) *MongoEmailService {
 	}
 }
 
+// mailboxEntryOptions represents the options for a mailbox entry
+type mailboxEntryOptions struct {
+	Read     bool   `bson:"read"`
+	Category string `bson:"category,omitempty"`
+}
+
 // mailboxEntry represents a reference to a message in a user's mailbox
 type mailboxEntry struct {
-	UserID     string    `bson:"userId"`
-	MessageID  string    `bson:"messageId"`
-	ThreadID   string    `bson:"threadId"`
-	Folder     string    `bson:"folder"`
-	Read       bool      `bson:"read"`
-	ReceivedAt time.Time `bson:"receivedAt"`
-	Category   string    `bson:"category,omitempty"` // Optional category field
+	UserID     string              `bson:"userId"`
+	MessageID  string              `bson:"messageId"`
+	ThreadID   string              `bson:"threadId"`
+	Folder     string              `bson:"folder"`
+	ReceivedAt time.Time           `bson:"receivedAt"`
+	Options    mailboxEntryOptions `bson:"options"`
 }
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
@@ -134,8 +139,10 @@ func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailReque
 			MessageID:  messageID,
 			ThreadID:   threadID,
 			Folder:     "sent",
-			Read:       true,
 			ReceivedAt: now,
+			Options: mailboxEntryOptions{
+				Read: true,
+			},
 		},
 	}
 
@@ -297,9 +304,11 @@ func createMailboxEntries(recipients []string, messageID, threadID string, categ
 			MessageID:  messageID,
 			ThreadID:   threadID,
 			Folder:     "inbox",
-			Read:       false,
 			ReceivedAt: now,
-			Category:   category,
+			Options: mailboxEntryOptions{
+				Read:     false,
+				Category: category,
+			},
 		})
 	}
 	return entries
@@ -460,7 +469,7 @@ func (m *MongoEmailService) fetchReadStatusMap(ctx context.Context, quillmail st
 		return nil, err
 	}
 	for _, entry := range mailboxEntries {
-		readStatusMap[entry.MessageID] = entry.Read
+		readStatusMap[entry.MessageID] = entry.Options.Read
 	}
 	return readStatusMap, nil
 }
@@ -744,7 +753,7 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 				unreadCount = 0
 			}
 
-			message := convertBsonToThreadOverview(rawMsg, entry.Read)
+			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read)
 			message.Count = int(totalCount)
 			message.UnreadCount = int(unreadCount)
 
@@ -966,9 +975,11 @@ func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID str
 				MessageID:  messageID,
 				ThreadID:   threadID,
 				Folder:     "inbox",
-				Read:       false,
 				ReceivedAt: now,
-				Category:   category,
+				Options: mailboxEntryOptions{
+					Read:     false,
+					Category: category,
+				},
 			})
 		} else {
 			external = append(external, addr)
@@ -989,6 +1000,7 @@ func validateQuillMailFormat(input string) bool {
 }
 
 func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (UpdateEmailResult, error) {
+
 	return UpdateEmailResult{}, nil
 }
 
@@ -1042,9 +1054,9 @@ func (m *MongoEmailService) countMessagesInThread(ctx context.Context, threadID 
 // countUnreadMessagesInThread counts the number of unread messages for a user in a thread.
 func (m *MongoEmailService) countUnreadMessagesInThread(ctx context.Context, userID string, threadID string) (int64, error) {
 	filter := bson.M{
-		"userId":   userID,
-		"threadId": threadID,
-		"read":     false,
+		"userId":       userID,
+		"threadId":     threadID,
+		"options.read": false,
 	}
 	count, err := m.db.Collection("mailboxes").CountDocuments(ctx, filter)
 	if err != nil {
