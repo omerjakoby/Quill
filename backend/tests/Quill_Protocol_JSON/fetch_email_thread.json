@@ -3,14 +3,14 @@
   "timestamp": "2025-06-28T00:04:00Z",
   "payload": {
     "mode": "thread",
-    "thread_id": "6f4a1252-8873-472b-b3aa-3e6cbd203364",
+    "thread_id": "e141651a-8456-46b0-a88f-834247d79b42",
     "limit": 5,
     "offset": 0
   },
   "signature": "",
   "anti_spam": {
     "type": "hashcash",
-    "resource": "alice~quillmail.com",
+    "resource": "omer~quillmail.xyz",
     "bits": 22,
     "nonce": "000abc123"
   }
