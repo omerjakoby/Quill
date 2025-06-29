@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/umahmood/hashcash"
 	"io"
 	"net"
 	"quill/pkg/domain"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/umahmood/hashcash"
 )
 
 //TODO add checking for signature
@@ -62,9 +63,9 @@ func (p *ProtocolHandler) Serve(conn net.Conn) {
 			continue
 		}
 		// validate the anti_spam
-		if !p.validateAntiSpam(pkt, conn) {
-			return
-		}
+		// if !p.validateAntiSpam(pkt, conn) {
+		// 	return
+		// }
 
 		switch phase {
 		case phaseAwaitHandshake:
