@@ -72,12 +72,7 @@ func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, q
 // initializeMongoDB connects to MongoDB and ensures indexes
 func initializeMongoDB() *db.MongoDB {
 	mongoURI := getEnvWithDefault("MONGODB_URI", "mongodb://localhost:27017")
-	mongoPassword := getEnvWithDefault("mongodb_password", "")
 	mongoDatabase := getEnvWithDefault("MONGODB_DATABASE", "quill")
-
-	if mongoPassword != "" && strings.Contains(mongoURI, "<db_password>") {
-		mongoURI = strings.Replace(mongoURI, "<db_password>", mongoPassword, 1)
-	}
 
 	mongoConfig := db.MongoConfig{
 		URI:      mongoURI,
