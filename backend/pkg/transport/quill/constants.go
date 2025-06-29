@@ -12,8 +12,8 @@ const DefaultProtocolVersion = 1
 
 // AntiSpamPolicy tells you which anti-spam scheme & parameters to enforce per packet type.
 var DefaultRequiredAntiSpam = map[string]AntiSpamPolicy{
-	PacketTypeSendEmail:  {Type: "hashcash", Bits: 22},
-	PacketTypeFetchEmail: {Type: "hashcash", Bits: 22},
+	PacketTypeSendEmail:  {Type: "hashcash", Bits: 20},
+	PacketTypeFetchEmail: {Type: "hashcash", Bits: 18},
 	PacketTypeFetchKeys:  {Type: "none"},
 }
 

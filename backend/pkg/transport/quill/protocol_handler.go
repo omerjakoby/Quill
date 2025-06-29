@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/umahmood/hashcash"
 	"io"
 	"net"
@@ -356,43 +357,59 @@ func (p *ProtocolHandler) validateTimestamp(ts string, conn net.Conn) bool {
 	return true
 }
 
-// validateAntiSpam enforces per-packet anti-spam proof based on default policy
+// validateAntiSpam checks the Packet’s AntiSpam proof against the server’s policy.
 func (p *ProtocolHandler) validateAntiSpam(pkt *Packet, conn net.Conn) bool {
 	policy, ok := DefaultRequiredAntiSpam[pkt.Type]
-	// if no policy or policy set to none, skip validation
 	if !ok || policy.Type == "none" {
 		return true
 	}
-	// proof is required
+
 	if pkt.AntiSpam == nil {
 		p.sendError(conn, ErrorCodeSpamProofRequired, "missing anti_spam proof")
 		return false
 	}
-	// proof parameters check
+
 	proof := pkt.AntiSpam
 	if proof.Type != policy.Type || proof.Bits != policy.Bits {
 		p.sendError(conn, ErrorCodeInvalidSpamProof, "invalid anti_spam proof parameters")
 		return false
 	}
 
-	hash := sha256.Sum256(pkt.Payload)
-	resource := hex.EncodeToString(hash[:])
+	// 1) Unmarshal the raw payload to normalize key ordering & remove whitespace
+	var payload interface{}
+	if err := json.Unmarshal(pkt.Payload, &payload); err != nil {
+		p.sendError(conn, ErrorCodeInvalidPayload, "invalid payload JSON")
+		return false
+	}
+
+	// 2) Re-marshal into compact, sorted JSON to get canonical form
+	canonical, err := json.Marshal(payload)
+	if err != nil {
+		p.sendError(conn, ErrorCodeInternalServerError, "failed to canonicalize payload")
+		return false
+	}
+	fmt.Printf("server Canonical: %s\n", string(canonical))
+	// 3) Compute resource = sha256(canonical JSON)
+	sum := sha256.Sum256(canonical)
+	resource := hex.EncodeToString(sum[:])
 
 	if proof.Resource != resource {
 		p.sendError(conn, ErrorCodeInvalidSpamProof, "anti_spam resource mismatch")
 		return false
 	}
 
+	// 4) Verify the hashcash nonce
 	hc, err := hashcash.New(&hashcash.Resource{
 		Data:          resource,
-		ValidatorFunc: func(res string) bool { return true },
+		ValidatorFunc: func(_ string) bool { return true },
 	}, &hashcash.Config{
-		Bits: policy.Bits,
+		Bits: 18,
 	})
 	if err != nil {
 		p.sendError(conn, ErrorCodeInternalServerError, "hashcash init failed")
 		return false
 	}
+
 	valid, err := hc.Verify(proof.Nonce)
 	if err != nil || !valid {
 		p.sendError(conn, ErrorCodeInvalidSpamProof, "hashcash validation failed")
