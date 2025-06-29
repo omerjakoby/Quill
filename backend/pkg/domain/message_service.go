@@ -733,23 +733,49 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 		return nil, err
 	}
 
+	// Collect all unique thread IDs from entries
+	threadIDSet := make(map[string]bool)
+	for _, entry := range entries {
+		if rawMsg, found := messageMap[entry.MessageID]; found {
+			threadID := getThreadIDFromBson(rawMsg)
+			threadIDSet[threadID] = true
+		}
+	}
+
+	// Convert to slice for batch queries
+	var threadIDs []string
+	for threadID := range threadIDSet {
+		threadIDs = append(threadIDs, threadID)
+	}
+
+	// Batch query for total message counts per thread
+	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting total messages: %v", err)
+		// Fallback to empty map - individual counts will default to 1
+		totalCounts = make(map[string]int64)
+	}
+
+	// Batch query for unread message counts per thread for this user
+	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting unread messages: %v", err)
+		// Fallback to empty map - individual counts will default to 0
+		unreadCounts = make(map[string]int64)
+	}
+
 	for _, entry := range entries {
 		if rawMsg, found := messageMap[entry.MessageID]; found {
 			threadID := getThreadIDFromBson(rawMsg)
 
-			// Get the fresh total count for the thread
-			totalCount, err := m.countMessagesInThread(ctx, threadID)
-			if err != nil {
-				// Log the error and maybe default to 1 or 0
-				log.Printf("Error counting total messages in thread %s: %v", threadID, err)
+			// Use pre-fetched counts, with fallback defaults
+			totalCount, exists := totalCounts[threadID]
+			if !exists {
 				totalCount = 1
 			}
 
-			// Get the fresh unread count for the user in the thread
-			unreadCount, err := m.countUnreadMessagesInThread(ctx, quillmail, threadID)
-			if err != nil {
-				// Log the error and maybe default to 0
-				log.Printf("Error counting unread messages in thread %s for user %s: %v", threadID, quillmail, err)
+			unreadCount, exists := unreadCounts[threadID]
+			if !exists {
 				unreadCount = 0
 			}
 
@@ -1001,7 +1027,8 @@ func validateQuillMailFormat(input string) bool {
 
 func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (UpdateEmailResult, error) {
 
-	return UpdateEmailResult{}, nil
+	return UpdateEmailResult{}, errorString("UpdateEmail not implemented")
+
 }
 
 // countUniqueThreads counts the number of unique threads matching the filter
@@ -1063,4 +1090,96 @@ func (m *MongoEmailService) countUnreadMessagesInThread(ctx context.Context, use
 		return 0, err
 	}
 	return count, nil
+}
+
+// batchCountMessagesInThreads counts total messages for multiple threads in a single query
+func (m *MongoEmailService) batchCountMessagesInThreads(ctx context.Context, threadIDs []string) (map[string]int64, error) {
+	if len(threadIDs) == 0 {
+		return make(map[string]int64), nil
+	}
+
+	pipeline := []bson.M{
+		// Match messages for all thread IDs
+		{"$match": bson.M{
+			"options.threadID": bson.M{"$in": threadIDs},
+		}},
+		// Group by threadID and count messages
+		{"$group": bson.M{
+			"_id":   "$options.threadID",
+			"count": bson.M{"$sum": 1},
+		}},
+	}
+
+	cursor, err := m.db.Collection("messages").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			log.Printf("Error closing cursor: %v", err)
+		}
+	}()
+
+	var results []bson.M
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]int64)
+	for _, result := range results {
+		if threadID, ok := result["_id"].(string); ok {
+			if count, ok := result["count"].(int32); ok {
+				counts[threadID] = int64(count)
+			}
+		}
+	}
+
+	return counts, nil
+}
+
+// batchCountUnreadMessagesInThreads counts unread messages for multiple threads for a specific user in a single query
+func (m *MongoEmailService) batchCountUnreadMessagesInThreads(ctx context.Context, userID string, threadIDs []string) (map[string]int64, error) {
+	if len(threadIDs) == 0 {
+		return make(map[string]int64), nil
+	}
+
+	pipeline := []bson.M{
+		// Match unread mailbox entries for the user in the specified threads
+		{"$match": bson.M{
+			"userId":       userID,
+			"threadId":     bson.M{"$in": threadIDs},
+			"options.read": false,
+		}},
+		// Group by threadId and count unread messages
+		{"$group": bson.M{
+			"_id":   "$threadId",
+			"count": bson.M{"$sum": 1},
+		}},
+	}
+
+	cursor, err := m.db.Collection("mailboxes").Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			log.Printf("Error closing cursor: %v", err)
+		}
+	}()
+
+	var results []bson.M
+	if err = cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]int64)
+	for _, result := range results {
+		if threadID, ok := result["_id"].(string); ok {
+			if count, ok := result["count"].(int32); ok {
+				counts[threadID] = int64(count)
+			}
+		}
+	}
+
+	return counts, nil
 }
