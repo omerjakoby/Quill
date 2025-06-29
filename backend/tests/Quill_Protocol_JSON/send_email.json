@@ -3,7 +3,7 @@
   "timestamp": "2025-06-28T00:02:00Z",
   "payload": {
     "message_id": "",
-    "thread_id": "4da58cdb-e176-4e1f-84ac-7553c213f167",
+    "thread_id": "",
     "from": "alice~quillmail.com",
     "to": ["omer~quillmail.com"],
     "cc": [],

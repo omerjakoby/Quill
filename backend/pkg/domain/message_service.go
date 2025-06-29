@@ -61,14 +61,13 @@ func NewMongoEmailService(db *mongo.Database) *MongoEmailService {
 
 // mailboxEntry represents a reference to a message in a user's mailbox
 type mailboxEntry struct {
-	UserID        string    `bson:"userId"`
-	MessageID     string    `bson:"messageId"`
-	ThreadID      string    `bson:"threadId"`
-	Folder        string    `bson:"folder"`
-	Read          bool      `bson:"read"`
-	ReceivedAt    time.Time `bson:"receivedAt"`
-	CountInThread int       `bson:"countInThread"`      // Number of messages in the thread
-	Category      string    `bson:"category,omitempty"` // Optional category field
+	UserID     string    `bson:"userId"`
+	MessageID  string    `bson:"messageId"`
+	ThreadID   string    `bson:"threadId"`
+	Folder     string    `bson:"folder"`
+	Read       bool      `bson:"read"`
+	ReceivedAt time.Time `bson:"receivedAt"`
+	Category   string    `bson:"category,omitempty"` // Optional category field
 }
 
 // Send stores a message in MongoDB and adds entries to each recipient's mailbox
@@ -129,22 +128,14 @@ func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailReque
 		return SendEmailResult{}, err
 	}
 
-	// Count messages in thread after inserting the new message
-	countInThread, err := m.countMessagesInThread(ctx, threadID)
-	if err != nil {
-		log.Printf("Failed to count messages in thread: %v", err)
-		countInThread = 1 // fallback to 1 if count fails
-	}
-
 	entries := []interface{}{
 		mailboxEntry{
-			UserID:        userID,
-			MessageID:     messageID,
-			ThreadID:      threadID,
-			Folder:        "sent",
-			Read:          true,
-			ReceivedAt:    now,
-			CountInThread: int(countInThread),
+			UserID:     userID,
+			MessageID:  messageID,
+			ThreadID:   threadID,
+			Folder:     "sent",
+			Read:       true,
+			ReceivedAt: now,
 		},
 	}
 
@@ -155,7 +146,7 @@ func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailReque
 	}
 
 	allRecipients := append(append(req.To, req.CC...), req.BCC...)
-	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, category, now, int(countInThread))
+	internal, external, newEntries := splitRecipientsAndBuildEntries(allRecipients, messageID, threadID, category, now)
 	entries = append(entries, newEntries...)
 
 	if len(entries) > 0 {
@@ -224,13 +215,6 @@ func (m *MongoEmailService) SendExternal(ctx context.Context, req SendEmailReque
 		return SendEmailResult{}, err
 	}
 
-	// Count messages in thread after inserting the new message
-	countInThread, err := m.countMessagesInThread(ctx, threadID)
-	if err != nil {
-		log.Printf("Failed to count messages in thread: %v", err)
-		countInThread = 1 // fallback to 1 if count fails
-	}
-
 	category, err := m.GetCategory(ctx, req)
 	if err != nil {
 		log.Printf("Failed to get category for message: %v", err)
@@ -239,7 +223,7 @@ func (m *MongoEmailService) SendExternal(ctx context.Context, req SendEmailReque
 
 	// Create mailbox entries for all internal recipients
 	myRecipients := getInternalRecipients(req, constants.DOMAIN_NAME)
-	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, category, now, int(countInThread))
+	mailboxEntries := createMailboxEntries(myRecipients, messageID, threadID, category, now)
 	if len(mailboxEntries) > 0 {
 		_, err = m.db.Collection("mailboxes").InsertMany(ctx, mailboxEntries)
 		if err != nil {
@@ -305,18 +289,17 @@ func getInternalRecipients(req SendEmailRequest, domain string) []string {
 }
 
 // Helper to create mailbox entries
-func createMailboxEntries(recipients []string, messageID, threadID string, category string, now time.Time, countInThread int) []interface{} {
+func createMailboxEntries(recipients []string, messageID, threadID string, category string, now time.Time) []interface{} {
 	var entries []interface{}
 	for _, recipient := range recipients {
 		entries = append(entries, mailboxEntry{
-			UserID:        recipient,
-			MessageID:     messageID,
-			ThreadID:      threadID,
-			Folder:        "inbox",
-			Read:          false,
-			ReceivedAt:    now,
-			CountInThread: countInThread,
-			Category:      category,
+			UserID:     recipient,
+			MessageID:  messageID,
+			ThreadID:   threadID,
+			Folder:     "inbox",
+			Read:       false,
+			ReceivedAt: now,
+			Category:   category,
 		})
 	}
 	return entries
@@ -732,9 +715,39 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 	}
 
 	var messages []ThreadOverview
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return nil, ErrUserNotAuthenticated
+	}
+	quillmail, err := m.getUserQuillMail(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, entry := range entries {
 		if rawMsg, found := messageMap[entry.MessageID]; found {
-			message := convertBsonToThreadOverview(rawMsg, entry.Read, entry.CountInThread)
+			threadID := getThreadIDFromBson(rawMsg)
+
+			// Get the fresh total count for the thread
+			totalCount, err := m.countMessagesInThread(ctx, threadID)
+			if err != nil {
+				// Log the error and maybe default to 1 or 0
+				log.Printf("Error counting total messages in thread %s: %v", threadID, err)
+				totalCount = 1
+			}
+
+			// Get the fresh unread count for the user in the thread
+			unreadCount, err := m.countUnreadMessagesInThread(ctx, quillmail, threadID)
+			if err != nil {
+				// Log the error and maybe default to 0
+				log.Printf("Error counting unread messages in thread %s for user %s: %v", threadID, quillmail, err)
+				unreadCount = 0
+			}
+
+			message := convertBsonToThreadOverview(rawMsg, entry.Read)
+			message.Count = int(totalCount)
+			message.UnreadCount = int(unreadCount)
+
 			messages = append(messages, message)
 		}
 	}
@@ -763,23 +776,26 @@ func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 }
 
 // Helper function to convert BSON to Message domain object
-func convertBsonToThreadOverview(bsonMsg bson.M, read bool, count int) ThreadOverview {
+func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
 	msg := ThreadOverview{
 		ThreadID: getThreadIDFromBson(bsonMsg),
 		LatestMessage: MessageSummary{
-			ID:        getStringFromBson(bsonMsg, "messageId"),
-			ThreadID:  getThreadIDFromBson(bsonMsg),
-			From:      getStringFromBson(bsonMsg, "fromMail"),
-			Subject:   getStringFromBson(bsonMsg, "subject"),
-			Snippet:   getTextBodyFromBson(bsonMsg),
+			ID:       getStringFromBson(bsonMsg, "messageId"),
+			ThreadID: getThreadIDFromBson(bsonMsg),
+			From:     getStringFromBson(bsonMsg, "fromMail"),
+			Subject:  getStringFromBson(bsonMsg, "subject"),
+			Snippet: func() string {
+				txt := getTextBodyFromBson(bsonMsg)
+				if len(txt) > 100 {
+					return txt[:100]
+				}
+				return ""
+			}(),
 			Timestamp: getTimeFromBson(bsonMsg, "sentAt"),
 			Flags: EmailFlags{
 				IsRead: read,
 			},
 		},
-		Count:       count,
-		UnreadCount: 0, //TODO: make count work
-
 	}
 	return msg
 }
@@ -941,19 +957,18 @@ func getOrValidateThreadID(threadIDPtr *string) (string, error) {
 }
 
 // Helper to split recipients and build mailbox entries
-func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, category string, now time.Time, countInThread int) (internal []string, external []string, entries []interface{}) {
+func splitRecipientsAndBuildEntries(recipients []string, messageID, threadID string, category string, now time.Time) (internal []string, external []string, entries []interface{}) {
 	for _, addr := range recipients {
 		if strings.HasSuffix(addr, constants.DOMAIN_NAME) {
 			internal = append(internal, addr)
 			entries = append(entries, mailboxEntry{
-				UserID:        addr,
-				MessageID:     messageID,
-				ThreadID:      threadID,
-				Folder:        "inbox",
-				Read:          false,
-				ReceivedAt:    now,
-				CountInThread: countInThread,
-				Category:      category,
+				UserID:     addr,
+				MessageID:  messageID,
+				ThreadID:   threadID,
+				Folder:     "inbox",
+				Read:       false,
+				ReceivedAt: now,
+				Category:   category,
 			})
 		} else {
 			external = append(external, addr)
@@ -1022,4 +1037,18 @@ func (m *MongoEmailService) countMessagesInThread(ctx context.Context, threadID 
 		"options.threadID": threadID,
 	}
 	return m.db.Collection("messages").CountDocuments(ctx, messageFilter)
+}
+
+// countUnreadMessagesInThread counts the number of unread messages for a user in a thread.
+func (m *MongoEmailService) countUnreadMessagesInThread(ctx context.Context, userID string, threadID string) (int64, error) {
+	filter := bson.M{
+		"userId":   userID,
+		"threadId": threadID,
+		"read":     false,
+	}
+	count, err := m.db.Collection("mailboxes").CountDocuments(ctx, filter)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
