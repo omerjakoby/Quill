@@ -10,7 +10,7 @@
   "signature": "",
   "anti_spam": {
     "type": "hashcash",
-    "resource": "alice~quillmail.com",
+    "resource": "omer~quillmail.xyz",
     "bits": 22,
     "nonce": "000abc123"
   }

@@ -10,7 +10,7 @@
       "search": {
         "keywords": ["project", "deadline"],
         "exact_phrase": "team meeting",
-        "from": ["alice~quillmail.com"],
+        "from": ["omer~quillmail.com"],
         "to": ["itamar~quillmail.com"]
       },
       "flags": {

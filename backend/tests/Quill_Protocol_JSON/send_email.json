@@ -5,7 +5,7 @@
     "message_id": "",
     "thread_id": "",
     "from": "alice~quillmail.com",
-    "to": ["bob~quillmail.com"],
+    "to": ["omer~quillmail.com"],
     "cc": [],
     "bcc": [],
     "subject": "Hello from Quill",
