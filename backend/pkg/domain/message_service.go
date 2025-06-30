@@ -453,7 +453,7 @@ func extractMessageIDsFromRaw(rawMessages []bson.M) []string {
 // Helper: Fetch read status map for messages
 func (m *MongoEmailService) fetchReadStatusMap(ctx context.Context, quillmail string, messageIDs []string) (map[string]bool, error) {
 	readStatusFilter := bson.M{
-		"userId":    quillmail,
+		"quillMail": quillmail,
 		"messageId": bson.M{"$in": messageIDs},
 	}
 	readStatusCursor, err := m.db.Collection("mailboxes").Find(ctx, readStatusFilter)
@@ -1176,7 +1176,7 @@ func (m *MongoEmailService) countMessagesInThread(ctx context.Context, threadID 
 // countUnreadMessagesInThread counts the number of unread messages for a user in a thread.
 func (m *MongoEmailService) countUnreadMessagesInThread(ctx context.Context, userID string, threadID string) (int64, error) {
 	filter := bson.M{
-		"userId":       userID,
+		"quillMail":    userID,
 		"threadId":     threadID,
 		"options.read": false,
 	}
@@ -1241,7 +1241,7 @@ func (m *MongoEmailService) batchCountUnreadMessagesInThreads(ctx context.Contex
 	pipeline := []bson.M{
 		// Match unread mailbox entries for the user in the specified threads
 		{"$match": bson.M{
-			"userId":       userID,
+			"quillMail":    userID,
 			"threadId":     bson.M{"$in": threadIDs},
 			"options.read": false,
 		}},
