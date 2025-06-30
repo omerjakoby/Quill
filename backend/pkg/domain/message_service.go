@@ -67,7 +67,7 @@ type mailboxEntryOptions struct {
 
 // mailboxEntry represents a reference to a message in a user's mailbox
 type mailboxEntry struct {
-	UserID     string              `bson:"userId"`
+	UserID     string              `bson:"quillMail"` // quillmail address of the user
 	MessageID  string              `bson:"messageId"`
 	ThreadID   string              `bson:"threadId"`
 	Folder     string              `bson:"folder"`
@@ -398,8 +398,8 @@ func (m *MongoEmailService) checkThreadAccess(ctx context.Context, req FetchEmai
 	if count == 0 {
 		// Also check with the quillmail address
 		mailboxFilter = bson.M{
-			"userId":   quillmail,
-			"threadID": *req.ThreadID,
+			"quillMail": quillmail,
+			"threadID":  *req.ThreadID,
 		}
 		count, err = m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
 		if err != nil {
@@ -562,18 +562,18 @@ func (m *MongoEmailService) getUserQuillMail(ctx context.Context, userID string)
 func buildMailboxFilter(req FetchEmailRequest, userID, quillmail string) bson.M {
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		return bson.M{
-			"userId":   quillmail,
-			"threadId": *req.ThreadID,
+			"quillMail": quillmail,
+			"threadId":  *req.ThreadID,
 		}
 	} else if req.Mode == FetchModeOverview && req.Folder != nil {
 		return bson.M{
-			"userId": quillmail,
-			"folder": *req.Folder,
+			"quillMail": quillmail,
+			"folder":    *req.Folder,
 		}
 	}
 	return bson.M{
-		"userId": userID,
-		"folder": "inbox",
+		"quillMail": userID,
+		"folder":    "inbox",
 	}
 }
 
@@ -818,14 +818,14 @@ func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
 			ID:       getStringFromBson(bsonMsg, "messageId"),
 			ThreadID: getThreadIDFromBson(bsonMsg),
 			From:     getStringFromBson(bsonMsg, "fromMail"),
-            Subject:  getStringFromBson(bsonMsg, "subject"),
-            Snippet: func() string {
-                txt := getTextBodyFromBson(bsonMsg)
-                if len(txt) <= 100 {
-                    return txt
-                }
-                return txt[:100] + "..."
-            }(),
+			Subject:  getStringFromBson(bsonMsg, "subject"),
+			Snippet: func() string {
+				txt := getTextBodyFromBson(bsonMsg)
+				if len(txt) <= 100 {
+					return txt
+				}
+				return txt[:100] + "..."
+			}(),
 			Timestamp: getTimeFromBson(bsonMsg, "sentAt"),
 			Flags: EmailFlags{
 				IsRead: read,
@@ -1026,7 +1026,21 @@ func validateQuillMailFormat(input string) bool {
 }
 
 func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (UpdateEmailResult, error) {
+	userid, ok := UserIDFromContext(ctx)
+	if !ok {
+		return UpdateEmailResult{}, ErrUserNotAuthenticated
+	}
+	quillMail, err := m.getUserQuillMail(ctx, userid)
+	if err != nil {
+		return UpdateEmailResult{}, err
+	}
+	log.Println("QuillMail:", quillMail)
+	for _, msgId := range req.MessageIDs {
+		if !isUUID(msgId) {
+			continue
+		}
 
+	}
 	return UpdateEmailResult{}, errorString("UpdateEmail not implemented")
 
 }
@@ -1063,16 +1077,16 @@ func (m *MongoEmailService) countUniqueThreads(ctx context.Context, filter bson.
 		return 0, nil
 	}
 
-    switch count := result[0]["totalThreads"].(type) {
-    case int32:
-        return int64(count), nil
-    case int64:
-        return count, nil
-    case float64:
-        return int64(count), nil
-    default:
-        return 0, fmt.Errorf("unexpected count type: %T", count)
-    }
+	switch count := result[0]["totalThreads"].(type) {
+	case int32:
+		return int64(count), nil
+	case int64:
+		return count, nil
+	case float64:
+		return int64(count), nil
+	default:
+		return 0, fmt.Errorf("unexpected count type: %T", count)
+	}
 	return 0, nil
 }
 
