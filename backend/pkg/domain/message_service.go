@@ -1038,15 +1038,86 @@ func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequ
 	if err != nil {
 		return UpdateEmailResult{}, err
 	}
-	log.Println("QuillMail:", quillMail)
+
+	results := []UpdateEmailResultItem{}
 	for _, msgId := range req.MessageIDs {
 		if !isUUID(msgId) {
+			results = append(results, UpdateEmailResultItem{
+				MessageID: msgId,
+				Status:    "ERROR",
+				Error: &EmailError{
+					Code:    "INVALID_MESSAGE_ID",
+					Message: "Invalid message ID format",
+				},
+			})
 			continue
 		}
 
+		err = m.handleUpdateEmailFlags(ctx, quillMail, msgId, req)
+		if err != nil {
+			results = append(results, UpdateEmailResultItem{
+				MessageID: msgId,
+				Status:    "ERROR",
+				Error: &EmailError{
+					Code:    "UPDATE_FAILED",
+					Message: err.Error(),
+				},
+			})
+		} else {
+			results = append(results, UpdateEmailResultItem{
+				MessageID: msgId,
+				Status:    "OK",
+				Error:     nil,
+			})
+		}
 	}
-	return UpdateEmailResult{}, errorString("UpdateEmail not implemented")
 
+	return UpdateEmailResult{Results: results}, nil
+}
+
+// handleUpdateEmailFlags reduces complexity by handling all update/delete logic for a single message
+func (m *MongoEmailService) handleUpdateEmailFlags(ctx context.Context, quillMail, msgId string, req UpdateEmailRequest) error {
+	if req.Flags.IsDeleted != nil && *req.Flags.IsDeleted {
+		_, err := m.db.Collection("mailboxes").DeleteOne(ctx, bson.M{"messageId": msgId, "quillMail": quillMail})
+		if err != nil {
+			log.Printf("Failed to delete mailbox entries for message %s: %v", msgId, err)
+			return err
+		}
+		return nil
+	}
+	if req.Flags.IsRead != nil && *req.Flags.IsRead {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "options.read", true); err != nil {
+			return err
+		}
+	}
+	if req.Flags.IsStarred != nil {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "options.starred", *req.Flags.IsStarred); err != nil {
+			return err
+		}
+	}
+	if req.Category != nil {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "options.category", *req.Category); err != nil {
+			return err
+		}
+	}
+	if req.Folder != nil {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "folder", *req.Folder); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// updateMailboxField is a helper to update a single field in the mailbox document
+func (m *MongoEmailService) updateMailboxField(ctx context.Context, quillMail, msgId, field string, value interface{}) error {
+	_, err := m.db.Collection("mailboxes").UpdateOne(ctx,
+		bson.M{"messageId": msgId, "quillMail": quillMail},
+		bson.M{"$set": bson.M{field: value}})
+	if err != nil {
+		log.Printf("Failed to update %s for message %s: %v", field, msgId, err)
+		return err
+	}
+	return nil
 }
 
 // countUniqueThreads counts the number of unique threads matching the filter
