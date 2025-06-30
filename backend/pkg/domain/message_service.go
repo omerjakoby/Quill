@@ -701,6 +701,39 @@ func extractMessageIDs(entries []mailboxEntry) []string {
 
 // fetchMessagesByIDs fetches messages and maps them to domain Message objects in the order of entries
 func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]ThreadOverview, error) {
+	messageMap, err := m.getMessageMapByIDs(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return nil, ErrUserNotAuthenticated
+	}
+	quillmail, err := m.getUserQuillMail(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	threadIDs := m.collectThreadIDsFromEntries(entries, messageMap)
+	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting total messages: %v", err)
+		totalCounts = make(map[string]int64)
+	}
+
+	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting unread messages: %v", err)
+		unreadCounts = make(map[string]int64)
+	}
+
+	messages := m.buildThreadOverviews(entries, messageMap, totalCounts, unreadCounts)
+	return messages, nil
+}
+
+// Helper: get message map by IDs
+func (m *MongoEmailService) getMessageMapByIDs(ctx context.Context, messageIDs []string) (map[string]bson.M, error) {
 	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
 	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
 	if err != nil {
@@ -711,7 +744,6 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 			log.Printf("Error closing message cursor: %v", err)
 		}
 	}()
-
 	messageMap := make(map[string]bson.M)
 	var rawMessages []bson.M
 	if err = messageCursor.All(ctx, &rawMessages); err != nil {
@@ -722,18 +754,11 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 			messageMap[msgID] = msg
 		}
 	}
+	return messageMap, nil
+}
 
-	var messages []ThreadOverview
-	userID, ok := UserIDFromContext(ctx)
-	if !ok {
-		return nil, ErrUserNotAuthenticated
-	}
-	quillmail, err := m.getUserQuillMail(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Collect all unique thread IDs from entries
+// Helper: collect unique thread IDs from entries and messageMap
+func (m *MongoEmailService) collectThreadIDsFromEntries(entries []mailboxEntry, messageMap map[string]bson.M) []string {
 	threadIDSet := make(map[string]bool)
 	for _, entry := range entries {
 		if rawMsg, found := messageMap[entry.MessageID]; found {
@@ -741,52 +766,31 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 			threadIDSet[threadID] = true
 		}
 	}
-
-	// Convert to slice for batch queries
 	var threadIDs []string
 	for threadID := range threadIDSet {
 		threadIDs = append(threadIDs, threadID)
 	}
+	return threadIDs
+}
 
-	// Batch query for total message counts per thread
-	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting total messages: %v", err)
-		// Fallback to empty map - individual counts will default to 1
-		totalCounts = make(map[string]int64)
-	}
-
-	// Batch query for unread message counts per thread for this user
-	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting unread messages: %v", err)
-		// Fallback to empty map - individual counts will default to 0
-		unreadCounts = make(map[string]int64)
-	}
-
+// Helper: build ThreadOverview slice
+func (m *MongoEmailService) buildThreadOverviews(entries []mailboxEntry, messageMap map[string]bson.M, totalCounts, unreadCounts map[string]int64) []ThreadOverview {
+	var messages []ThreadOverview
 	for _, entry := range entries {
 		if rawMsg, found := messageMap[entry.MessageID]; found {
 			threadID := getThreadIDFromBson(rawMsg)
-
-			// Use pre-fetched counts, with fallback defaults
-			totalCount, exists := totalCounts[threadID]
-			if !exists {
+			totalCount := totalCounts[threadID]
+			if totalCount == 0 {
 				totalCount = 1
 			}
-
-			unreadCount, exists := unreadCounts[threadID]
-			if !exists {
-				unreadCount = 0
-			}
-
+			unreadCount := unreadCounts[threadID]
 			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read)
 			message.Count = int(totalCount)
 			message.UnreadCount = int(unreadCount)
-
 			messages = append(messages, message)
 		}
 	}
-	return messages, nil
+	return messages
 }
 
 // Helper function to convert BSON to Message domain object
