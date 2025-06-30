@@ -67,7 +67,7 @@ type mailboxEntryOptions struct {
 
 // mailboxEntry represents a reference to a message in a user's mailbox
 type mailboxEntry struct {
-	UserID     string              `bson:"userId"`
+	UserID     string              `bson:"quillMail"` // quillmail address of the user
 	MessageID  string              `bson:"messageId"`
 	ThreadID   string              `bson:"threadId"`
 	Folder     string              `bson:"folder"`
@@ -398,8 +398,8 @@ func (m *MongoEmailService) checkThreadAccess(ctx context.Context, req FetchEmai
 	if count == 0 {
 		// Also check with the quillmail address
 		mailboxFilter = bson.M{
-			"userId":   quillmail,
-			"threadID": *req.ThreadID,
+			"quillMail": quillmail,
+			"threadID":  *req.ThreadID,
 		}
 		count, err = m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
 		if err != nil {
@@ -453,7 +453,7 @@ func extractMessageIDsFromRaw(rawMessages []bson.M) []string {
 // Helper: Fetch read status map for messages
 func (m *MongoEmailService) fetchReadStatusMap(ctx context.Context, quillmail string, messageIDs []string) (map[string]bool, error) {
 	readStatusFilter := bson.M{
-		"userId":    quillmail,
+		"quillMail": quillmail,
 		"messageId": bson.M{"$in": messageIDs},
 	}
 	readStatusCursor, err := m.db.Collection("mailboxes").Find(ctx, readStatusFilter)
@@ -562,18 +562,18 @@ func (m *MongoEmailService) getUserQuillMail(ctx context.Context, userID string)
 func buildMailboxFilter(req FetchEmailRequest, userID, quillmail string) bson.M {
 	if req.Mode == FetchModeThread && req.ThreadID != nil {
 		return bson.M{
-			"userId":   quillmail,
-			"threadId": *req.ThreadID,
+			"quillMail": quillmail,
+			"threadId":  *req.ThreadID,
 		}
 	} else if req.Mode == FetchModeOverview && req.Folder != nil {
 		return bson.M{
-			"userId": quillmail,
-			"folder": *req.Folder,
+			"quillMail": quillmail,
+			"folder":    *req.Folder,
 		}
 	}
 	return bson.M{
-		"userId": userID,
-		"folder": "inbox",
+		"quillMail": userID,
+		"folder":    "inbox",
 	}
 }
 
@@ -701,6 +701,39 @@ func extractMessageIDs(entries []mailboxEntry) []string {
 
 // fetchMessagesByIDs fetches messages and maps them to domain Message objects in the order of entries
 func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]ThreadOverview, error) {
+	messageMap, err := m.getMessageMapByIDs(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return nil, ErrUserNotAuthenticated
+	}
+	quillmail, err := m.getUserQuillMail(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	threadIDs := m.collectThreadIDsFromEntries(entries, messageMap)
+	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting total messages: %v", err)
+		totalCounts = make(map[string]int64)
+	}
+
+	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting unread messages: %v", err)
+		unreadCounts = make(map[string]int64)
+	}
+
+	messages := m.buildThreadOverviews(entries, messageMap, totalCounts, unreadCounts)
+	return messages, nil
+}
+
+// Helper: get message map by IDs
+func (m *MongoEmailService) getMessageMapByIDs(ctx context.Context, messageIDs []string) (map[string]bson.M, error) {
 	messageFilter := bson.M{"messageId": bson.M{"$in": messageIDs}}
 	messageCursor, err := m.db.Collection("messages").Find(ctx, messageFilter)
 	if err != nil {
@@ -711,7 +744,6 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 			log.Printf("Error closing message cursor: %v", err)
 		}
 	}()
-
 	messageMap := make(map[string]bson.M)
 	var rawMessages []bson.M
 	if err = messageCursor.All(ctx, &rawMessages); err != nil {
@@ -722,18 +754,11 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 			messageMap[msgID] = msg
 		}
 	}
+	return messageMap, nil
+}
 
-	var messages []ThreadOverview
-	userID, ok := UserIDFromContext(ctx)
-	if !ok {
-		return nil, ErrUserNotAuthenticated
-	}
-	quillmail, err := m.getUserQuillMail(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Collect all unique thread IDs from entries
+// Helper: collect unique thread IDs from entries and messageMap
+func (m *MongoEmailService) collectThreadIDsFromEntries(entries []mailboxEntry, messageMap map[string]bson.M) []string {
 	threadIDSet := make(map[string]bool)
 	for _, entry := range entries {
 		if rawMsg, found := messageMap[entry.MessageID]; found {
@@ -741,52 +766,31 @@ func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs [
 			threadIDSet[threadID] = true
 		}
 	}
-
-	// Convert to slice for batch queries
 	var threadIDs []string
 	for threadID := range threadIDSet {
 		threadIDs = append(threadIDs, threadID)
 	}
+	return threadIDs
+}
 
-	// Batch query for total message counts per thread
-	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting total messages: %v", err)
-		// Fallback to empty map - individual counts will default to 1
-		totalCounts = make(map[string]int64)
-	}
-
-	// Batch query for unread message counts per thread for this user
-	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting unread messages: %v", err)
-		// Fallback to empty map - individual counts will default to 0
-		unreadCounts = make(map[string]int64)
-	}
-
+// Helper: build ThreadOverview slice
+func (m *MongoEmailService) buildThreadOverviews(entries []mailboxEntry, messageMap map[string]bson.M, totalCounts, unreadCounts map[string]int64) []ThreadOverview {
+	var messages []ThreadOverview
 	for _, entry := range entries {
 		if rawMsg, found := messageMap[entry.MessageID]; found {
 			threadID := getThreadIDFromBson(rawMsg)
-
-			// Use pre-fetched counts, with fallback defaults
-			totalCount, exists := totalCounts[threadID]
-			if !exists {
+			totalCount := totalCounts[threadID]
+			if totalCount == 0 {
 				totalCount = 1
 			}
-
-			unreadCount, exists := unreadCounts[threadID]
-			if !exists {
-				unreadCount = 0
-			}
-
+			unreadCount := unreadCounts[threadID]
 			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read)
 			message.Count = int(totalCount)
 			message.UnreadCount = int(unreadCount)
-
 			messages = append(messages, message)
 		}
 	}
-	return messages, nil
+	return messages
 }
 
 // Helper function to convert BSON to Message domain object
@@ -818,14 +822,14 @@ func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
 			ID:       getStringFromBson(bsonMsg, "messageId"),
 			ThreadID: getThreadIDFromBson(bsonMsg),
 			From:     getStringFromBson(bsonMsg, "fromMail"),
-            Subject:  getStringFromBson(bsonMsg, "subject"),
-            Snippet: func() string {
-                txt := getTextBodyFromBson(bsonMsg)
-                if len(txt) <= 100 {
-                    return txt
-                }
-                return txt[:100] + "..."
-            }(),
+			Subject:  getStringFromBson(bsonMsg, "subject"),
+			Snippet: func() string {
+				txt := getTextBodyFromBson(bsonMsg)
+				if len(txt) <= 100 {
+					return txt
+				}
+				return txt[:100] + "..."
+			}(),
 			Timestamp: getTimeFromBson(bsonMsg, "sentAt"),
 			Flags: EmailFlags{
 				IsRead: read,
@@ -1026,9 +1030,94 @@ func validateQuillMailFormat(input string) bool {
 }
 
 func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (UpdateEmailResult, error) {
+	userid, ok := UserIDFromContext(ctx)
+	if !ok {
+		return UpdateEmailResult{}, ErrUserNotAuthenticated
+	}
+	quillMail, err := m.getUserQuillMail(ctx, userid)
+	if err != nil {
+		return UpdateEmailResult{}, err
+	}
 
-	return UpdateEmailResult{}, errorString("UpdateEmail not implemented")
+	results := []UpdateEmailResultItem{}
+	for _, msgId := range req.MessageIDs {
+		if !isUUID(msgId) {
+			results = append(results, UpdateEmailResultItem{
+				MessageID: msgId,
+				Status:    "ERROR",
+				Error: &EmailError{
+					Code:    "INVALID_MESSAGE_ID",
+					Message: "Invalid message ID format",
+				},
+			})
+			continue
+		}
 
+		err = m.handleUpdateEmailFlags(ctx, quillMail, msgId, req)
+		if err != nil {
+			results = append(results, UpdateEmailResultItem{
+				MessageID: msgId,
+				Status:    "ERROR",
+				Error: &EmailError{
+					Code:    "UPDATE_FAILED",
+					Message: err.Error(),
+				},
+			})
+		} else {
+			results = append(results, UpdateEmailResultItem{
+				MessageID: msgId,
+				Status:    "OK",
+				Error:     nil,
+			})
+		}
+	}
+
+	return UpdateEmailResult{Results: results}, nil
+}
+
+// handleUpdateEmailFlags reduces complexity by handling all update/delete logic for a single message
+func (m *MongoEmailService) handleUpdateEmailFlags(ctx context.Context, quillMail, msgId string, req UpdateEmailRequest) error {
+	if req.Flags.IsDeleted != nil && *req.Flags.IsDeleted {
+		_, err := m.db.Collection("mailboxes").DeleteOne(ctx, bson.M{"messageId": msgId, "quillMail": quillMail})
+		if err != nil {
+			log.Printf("Failed to delete mailbox entries for message %s: %v", msgId, err)
+			return err
+		}
+		return nil
+	}
+	if req.Flags.IsRead != nil && *req.Flags.IsRead {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "options.read", true); err != nil {
+			return err
+		}
+	}
+	if req.Flags.IsStarred != nil {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "options.starred", *req.Flags.IsStarred); err != nil {
+			return err
+		}
+	}
+	if req.Category != nil {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "options.category", *req.Category); err != nil {
+			return err
+		}
+	}
+	if req.Folder != nil {
+		if err := m.updateMailboxField(ctx, quillMail, msgId, "folder", *req.Folder); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// updateMailboxField is a helper to update a single field in the mailbox document
+func (m *MongoEmailService) updateMailboxField(ctx context.Context, quillMail, msgId, field string, value interface{}) error {
+	_, err := m.db.Collection("mailboxes").UpdateOne(ctx,
+		bson.M{"messageId": msgId, "quillMail": quillMail},
+		bson.M{"$set": bson.M{field: value}})
+	if err != nil {
+		log.Printf("Failed to update %s for message %s: %v", field, msgId, err)
+		return err
+	}
+	return nil
 }
 
 // countUniqueThreads counts the number of unique threads matching the filter
@@ -1063,16 +1152,16 @@ func (m *MongoEmailService) countUniqueThreads(ctx context.Context, filter bson.
 		return 0, nil
 	}
 
-    switch count := result[0]["totalThreads"].(type) {
-    case int32:
-        return int64(count), nil
-    case int64:
-        return count, nil
-    case float64:
-        return int64(count), nil
-    default:
-        return 0, fmt.Errorf("unexpected count type: %T", count)
-    }
+	switch count := result[0]["totalThreads"].(type) {
+	case int32:
+		return int64(count), nil
+	case int64:
+		return count, nil
+	case float64:
+		return int64(count), nil
+	default:
+		return 0, fmt.Errorf("unexpected count type: %T", count)
+	}
 	return 0, nil
 }
 
@@ -1087,7 +1176,7 @@ func (m *MongoEmailService) countMessagesInThread(ctx context.Context, threadID 
 // countUnreadMessagesInThread counts the number of unread messages for a user in a thread.
 func (m *MongoEmailService) countUnreadMessagesInThread(ctx context.Context, userID string, threadID string) (int64, error) {
 	filter := bson.M{
-		"userId":       userID,
+		"quillMail":    userID,
 		"threadId":     threadID,
 		"options.read": false,
 	}
@@ -1152,7 +1241,7 @@ func (m *MongoEmailService) batchCountUnreadMessagesInThreads(ctx context.Contex
 	pipeline := []bson.M{
 		// Match unread mailbox entries for the user in the specified threads
 		{"$match": bson.M{
-			"userId":       userID,
+			"quillMail":    userID,
 			"threadId":     bson.M{"$in": threadIDs},
 			"options.read": false,
 		}},

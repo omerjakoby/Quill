@@ -2,8 +2,8 @@
   "type": "UPDATE_EMAIL",
   "timestamp": "2025-06-28T00:04:00Z",
   "payload": {
-    "message_ids": ["msg-1234"],
-    "updates": { "folder": "archive", "flags": { "is_read": true } }
+    "message_ids": ["7fe7f7af-4c74-4e72-861f-aba471013985", "20d796c1-261d-4f14-bd7e-c0f7cf0fe021", "f349bab1-56ac-428b-9216-15b18f04efa2"],
+    "updates": { "folder": "inbox","category": "updates", "flags": { "is_read": true ,"is_starred": true} }
   },
   "signature": "",
   "anti_spam": { "type": "hashcash", "resource": "msg-1234", "bits": 22, "nonce": "00000000" }
