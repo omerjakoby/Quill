@@ -321,7 +321,7 @@ func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailReques
 	} else if req.Mode != FetchModeThread && req.Mode != FetchModeOverview {
 		return FetchEmailResult{}, errorString("invalid fetch mode")
 	} else if req.Mode == FetchModeOverview {
-		return m.FetchFolder(ctx, req)
+		return m.FetchOverview(ctx, req)
 	} else if req.Mode == FetchModeThread {
 		return m.FetchThread(ctx, req)
 	}
@@ -486,7 +486,7 @@ func mapRawMessagesToDomain(rawMessages []bson.M, readStatusMap map[string]bool)
 	return messages
 }
 
-func (m *MongoEmailService) FetchFolder(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
+func (m *MongoEmailService) FetchOverview(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	userID, ok := UserIDFromContext(ctx)
 	if !ok {
 		return FetchEmailResult{}, ErrUserNotAuthenticated
