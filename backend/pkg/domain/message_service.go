@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"quill/cmd/main/constants"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -63,6 +64,7 @@ func NewMongoEmailService(db *mongo.Database) *MongoEmailService {
 type mailboxEntryOptions struct {
 	Read     bool   `bson:"read"`
 	Category string `bson:"category,omitempty"`
+	Starred  bool   `bson:"starred,omitempty"` // indicates if the message is starred
 }
 
 // mailboxEntry represents a reference to a message in a user's mailbox
@@ -316,16 +318,76 @@ func createMailboxEntries(recipients []string, messageID, threadID string, categ
 
 // Fetch retrieves messages based on the provided request
 func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
+	// ... (Existing FetchEmail logic remains the same for initial mode checks)
 	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeOverview && req.Folder == nil) {
 		return FetchEmailResult{}, errorString("missing required parameters for fetch mode")
 	} else if req.Mode != FetchModeThread && req.Mode != FetchModeOverview {
 		return FetchEmailResult{}, errorString("invalid fetch mode")
 	} else if req.Mode == FetchModeOverview {
+		// THIS IS THE MODIFIED CALL
 		return m.FetchOverview(ctx, req)
 	} else if req.Mode == FetchModeThread {
+		// FetchThread remains unchanged, as per our earlier discussion.
 		return m.FetchThread(ctx, req)
 	}
 	return FetchEmailResult{}, errorString("unsupported fetch mode")
+}
+
+func (m *MongoEmailService) FetchOverview(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
+	userID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return FetchEmailResult{}, ErrUserNotAuthenticated
+	}
+
+	quillmail, err := m.getUserQuillMail(ctx, userID)
+	if err != nil {
+		return FetchEmailResult{}, err
+	}
+
+	limit := 10
+	if req.Limit != nil {
+		limit = *req.Limit
+	}
+	offset := 0
+	if req.Offset != nil {
+		offset = *req.Offset
+	}
+
+	// New: Build base mailbox filter including folder, is_read, is_starred
+	baseFilter := buildBaseMailboxFilter(req, userID, quillmail)
+
+	// New: Count unique threads with all filters applied
+	total, err := m.countUniqueThreadsWithFilters(ctx, baseFilter, req.Filters)
+	if err != nil {
+		log.Printf("Failed to count unique threads with filters: %v", err)
+		return FetchEmailResult{}, err
+	}
+
+	// New: Fetch mailbox entries AND joined message details with all filters
+	results, err := m.fetchMailboxEntriesWithFilters(ctx, baseFilter, req.Filters, offset, limit)
+	if err != nil {
+		log.Printf("Failed to fetch mailbox entries with filters: %v", err)
+		return FetchEmailResult{}, err
+	}
+
+	if len(results) == 0 {
+		return FetchEmailResult{
+			TotalThreads:    int(total),
+			Limit:           limit,
+			Offset:          offset,
+			ThreadOverviews: []ThreadOverview{},
+		}, nil
+	}
+
+	// New: Build ThreadOverviews from the raw BSON results of the aggregation
+	threadOverviews := m.buildThreadOverviewsFromAggregation(ctx, results, userID, quillmail)
+
+	return FetchEmailResult{
+		TotalThreads:    int(total),
+		Limit:           limit,
+		Offset:          offset,
+		ThreadOverviews: threadOverviews,
+	}, nil
 }
 
 func (m *MongoEmailService) FetchThread(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
@@ -390,7 +452,7 @@ func (m *MongoEmailService) FetchThread(ctx context.Context, req FetchEmailReque
 
 // Helper: Check if user has access to the thread
 func (m *MongoEmailService) checkThreadAccess(ctx context.Context, req FetchEmailRequest, userID, quillmail string) error {
-	mailboxFilter := buildMailboxFilter(req, userID, quillmail)
+	mailboxFilter := buildBaseMailboxFilter(req, userID, quillmail)
 	count, err := m.db.Collection("mailboxes").CountDocuments(ctx, mailboxFilter)
 	if err != nil {
 		return err
@@ -486,61 +548,6 @@ func mapRawMessagesToDomain(rawMessages []bson.M, readStatusMap map[string]bool)
 	return messages
 }
 
-func (m *MongoEmailService) FetchOverview(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
-	userID, ok := UserIDFromContext(ctx)
-	if !ok {
-		return FetchEmailResult{}, ErrUserNotAuthenticated
-	}
-
-	quillmail, err := m.getUserQuillMail(ctx, userID)
-	if err != nil {
-		return FetchEmailResult{}, err
-	}
-
-	limit := 10
-	if req.Limit != nil {
-		limit = *req.Limit
-	}
-	offset := 0
-	if req.Offset != nil {
-		offset = *req.Offset
-	}
-
-	filter := buildMailboxFilter(req, userID, quillmail)
-
-	// Count unique threads instead of total messages
-	total, err := m.countUniqueThreads(ctx, filter)
-	if err != nil {
-		return FetchEmailResult{}, err
-	}
-
-	entries, err := m.fetchMailboxEntries(ctx, filter, offset, limit)
-	if err != nil {
-		return FetchEmailResult{}, err
-	}
-	if len(entries) == 0 {
-		return FetchEmailResult{
-			TotalMessages: int(total),
-			Limit:         limit,
-			Offset:        offset,
-			Messages:      []Message{},
-		}, nil
-	}
-
-	messageIDs := extractMessageIDs(entries)
-	messages, err := m.fetchMessagesByIDs(ctx, messageIDs, entries)
-	if err != nil {
-		return FetchEmailResult{}, err
-	}
-
-	return FetchEmailResult{
-		TotalThreads:    int(total),
-		Limit:           limit,
-		Offset:          offset,
-		ThreadOverviews: messages,
-	}, nil
-}
-
 // getUserQuillMail retrieves the user's quillmail address from the users collection
 func (m *MongoEmailService) getUserQuillMail(ctx context.Context, userID string) (string, error) {
 	collection := m.db.Collection("users")
@@ -558,23 +565,31 @@ func (m *MongoEmailService) getUserQuillMail(ctx context.Context, userID string)
 	return result.UserQuillMail, nil
 }
 
-// buildMailboxFilter builds the filter for mailbox queries based on fetch mode
-func buildMailboxFilter(req FetchEmailRequest, userID, quillmail string) bson.M {
-	if req.Mode == FetchModeThread && req.ThreadID != nil {
-		return bson.M{
-			"quillMail": quillmail,
-			"threadId":  *req.ThreadID,
+// buildBaseMailboxFilter builds the initial filter for mailbox queries,
+// including user, folder, and mailbox-specific flags (read, starred).
+func buildBaseMailboxFilter(req FetchEmailRequest, userID, quillmail string) bson.M {
+	filter := bson.M{
+		"quillMail": quillmail,
+	}
+
+	// Add folder filter
+	if req.Folder != nil {
+		filter["folder"] = *req.Folder
+	} else {
+		filter["folder"] = "inbox" // default if not provided
+	}
+
+	// Add mailbox-level flag filters (IsRead, IsStarred)
+	if req.Filters != nil && req.Filters.Flags != nil {
+		if req.Filters.Flags.IsRead != nil {
+			filter["options.read"] = *req.Filters.Flags.IsRead
 		}
-	} else if req.Mode == FetchModeOverview && req.Folder != nil {
-		return bson.M{
-			"quillMail": quillmail,
-			"folder":    *req.Folder,
+		if req.Filters.Flags.IsStarred != nil {
+			filter["options.starred"] = *req.Filters.Flags.IsStarred
 		}
 	}
-	return bson.M{
-		"quillMail": userID,
-		"folder":    "inbox",
-	}
+
+	return filter
 }
 
 func (m *MongoEmailService) GetCategory(ctx context.Context, req SendEmailRequest) (string, error) {
@@ -652,42 +667,83 @@ CLEANUP:
 
 // fetchMailboxEntries retrieves mailbox entries with sorting, skip, and limit
 // Only returns the first message of each unique thread
-func (m *MongoEmailService) fetchMailboxEntries(ctx context.Context, filter bson.M, offset, limit int) ([]mailboxEntry, error) {
-	// Use aggregation pipeline to get only the first message of each thread
-	pipeline := []bson.M{
-		// Match the filter criteria
-		{"$match": filter},
-		// Sort by receivedAt descending to get the latest message first within each thread
-		{"$sort": bson.M{"receivedAt": -1}},
-		// Group by threadId and take the first (latest) message of each thread
-		{"$group": bson.M{
-			"_id": "$threadId",
-			"doc": bson.M{"$first": "$$ROOT"},
-		}},
-		// Replace the root document with the grouped document
-		{"$replaceRoot": bson.M{"newRoot": "$doc"}},
-		// Sort again by receivedAt to maintain chronological order across threads
-		{"$sort": bson.M{"receivedAt": -1}},
-		// Apply pagination
-		{"$skip": offset},
-		{"$limit": limit},
+// fetchMailboxEntriesWithFilters retrieves mailbox entries with sorting, skip, and limit,
+// applying all specified filters and joining with messages collection.
+// It returns raw BSON documents representing the combined mailboxEntry and messageDetails.
+func (m *MongoEmailService) fetchMailboxEntriesWithFilters(ctx context.Context, baseFilter bson.M, filters *FetchEmailFilters, offset, limit int) ([]bson.M, error) {
+	pipeline := []bson.M{}
+
+	// Stage 1: Match mailbox entries (applies user, folder, is_read, is_starred)
+	pipeline = append(pipeline, bson.M{"$match": baseFilter})
+
+	// Stage 2: Sort by receivedAt descending (within mailbox entries for initial ordering)
+	pipeline = append(pipeline, bson.M{"$sort": bson.M{"receivedAt": -1}})
+
+	// Stage 3: Lookup messages with nested filters for message-specific criteria
+	lookupPipeline := []bson.M{}
+
+	// Apply message-level filters (keywords, exact_phrase, from, to, attachments, date_range)
+	messageFilters := buildMessageFilters(filters)
+	if len(messageFilters) > 0 {
+		lookupPipeline = append(lookupPipeline, bson.M{"$match": messageFilters})
 	}
+
+	// Sort by sentAt descending to ensure we pick the latest *matching* message
+	lookupPipeline = append(lookupPipeline, bson.M{"$sort": bson.M{"sentAt": -1}})
+	lookupPipeline = append(lookupPipeline, bson.M{"$limit": 1}) // Only need the latest matching message
+
+	pipeline = append(pipeline, bson.M{
+		"$lookup": bson.M{
+			"from":         "messages",       // The collection to join with
+			"localField":   "messageId",      // Field from the input documents (mailboxes)
+			"foreignField": "messageId",      // Field from the 'messages' documents
+			"as":           "messageDetails", // Name of the new array field to add to the input documents
+			"pipeline":     lookupPipeline,   // The nested pipeline for filtering joined documents
+		},
+	})
+
+	// Stage 4: Filter out mailbox entries where no matching message was found by the lookup pipeline.
+	// This removes threads whose latest message (or any message if not sorted) didn't satisfy filters.
+	pipeline = append(pipeline, bson.M{"$match": bson.M{"messageDetails": bson.M{"$ne": []interface{}{}}}})
+
+	// Stage 5: Unwind the messageDetails array. Since we limited to 1 in lookup, this flattens it.
+	pipeline = append(pipeline, bson.M{"$unwind": "$messageDetails"})
+
+	// Stage 6: Group by threadId to ensure we get only one document per unique thread.
+	// "$first" picks the latest `doc` after all previous sorting and filtering.
+	pipeline = append(pipeline, bson.M{
+		"$group": bson.M{
+			"_id": "$threadId",                // Group by the thread ID
+			"doc": bson.M{"$first": "$$ROOT"}, // Take the first document (which will be the latest qualifying one)
+		},
+	})
+
+	// Stage 7: Replace root with the grouped document to flatten the structure again.
+	pipeline = append(pipeline, bson.M{"$replaceRoot": bson.M{"newRoot": "$doc"}})
+
+	// Stage 8: Final sort on the combined document's messageDetails.sentAt for chronological thread order.
+	pipeline = append(pipeline, bson.M{"$sort": bson.M{"messageDetails.sentAt": -1}})
+
+	// Stage 9: Apply pagination (skip and limit)
+	pipeline = append(pipeline, bson.M{"$skip": offset})
+	pipeline = append(pipeline, bson.M{"$limit": limit})
 
 	cursor, err := m.db.Collection("mailboxes").Aggregate(ctx, pipeline)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		if err := cursor.Close(ctx); err != nil {
-			log.Printf("Error closing cursor: %v", err)
+		if cerr := cursor.Close(ctx); cerr != nil {
+			log.Printf("Error closing cursor in fetchMailboxEntriesWithFilters: %v", cerr)
 		}
 	}()
 
-	var entries []mailboxEntry
-	if err = cursor.All(ctx, &entries); err != nil {
+	var results []bson.M
+	if err = cursor.All(ctx, &results); err != nil {
 		return nil, err
 	}
-	return entries, nil
+
+	return results, nil
 }
 
 // extractMessageIDs extracts message IDs from mailbox entries
@@ -700,37 +756,37 @@ func extractMessageIDs(entries []mailboxEntry) []string {
 }
 
 // fetchMessagesByIDs fetches messages and maps them to domain Message objects in the order of entries
-func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]ThreadOverview, error) {
-	messageMap, err := m.getMessageMapByIDs(ctx, messageIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	userID, ok := UserIDFromContext(ctx)
-	if !ok {
-		return nil, ErrUserNotAuthenticated
-	}
-	quillmail, err := m.getUserQuillMail(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	threadIDs := m.collectThreadIDsFromEntries(entries, messageMap)
-	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting total messages: %v", err)
-		totalCounts = make(map[string]int64)
-	}
-
-	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting unread messages: %v", err)
-		unreadCounts = make(map[string]int64)
-	}
-
-	messages := m.buildThreadOverviews(entries, messageMap, totalCounts, unreadCounts)
-	return messages, nil
-}
+//func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]ThreadOverview, error) {
+//	messageMap, err := m.getMessageMapByIDs(ctx, messageIDs)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	userID, ok := UserIDFromContext(ctx)
+//	if !ok {
+//		return nil, ErrUserNotAuthenticated
+//	}
+//	quillmail, err := m.getUserQuillMail(ctx, userID)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	threadIDs := m.collectThreadIDsFromEntries(entries, messageMap)
+//	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
+//	if err != nil {
+//		log.Printf("Error batch counting total messages: %v", err)
+//		totalCounts = make(map[string]int64)
+//	}
+//
+//	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
+//	if err != nil {
+//		log.Printf("Error batch counting unread messages: %v", err)
+//		unreadCounts = make(map[string]int64)
+//	}
+//
+//	messages := m.buildThreadOverviews(entries, messageMap, totalCounts, unreadCounts)
+//	return messages, nil
+//}
 
 // Helper: get message map by IDs
 func (m *MongoEmailService) getMessageMapByIDs(ctx context.Context, messageIDs []string) (map[string]bson.M, error) {
@@ -784,7 +840,7 @@ func (m *MongoEmailService) buildThreadOverviews(entries []mailboxEntry, message
 				totalCount = 1
 			}
 			unreadCount := unreadCounts[threadID]
-			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read)
+			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read, entry.Options.Starred)
 			message.Count = int(totalCount)
 			message.UnreadCount = int(unreadCount)
 			messages = append(messages, message)
@@ -815,7 +871,8 @@ func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 }
 
 // Helper function to convert BSON to Message domain object
-func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
+func convertBsonToThreadOverview(bsonMsg bson.M, read bool, stared bool) ThreadOverview {
+
 	msg := ThreadOverview{
 		ThreadID: getThreadIDFromBson(bsonMsg),
 		LatestMessage: MessageSummary{
@@ -832,11 +889,27 @@ func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
 			}(),
 			Timestamp: getTimeFromBson(bsonMsg, "sentAt"),
 			Flags: EmailFlags{
-				IsRead: read,
+				IsRead: read, HasAttachments: hasAttachmentsFromBson(bsonMsg), IsStarred: stared,
 			},
 		},
 	}
 	return msg
+}
+
+// hasAttachmentsFromBson checks if the given bson.M message has non-empty attachments.
+func hasAttachmentsFromBson(bsonMsg bson.M) bool {
+	attachments, ok := bsonMsg["attachments"]
+	if !ok || attachments == nil {
+		return false
+	}
+	switch arr := attachments.(type) {
+	case []interface{}:
+		return len(arr) > 0
+	case primitive.A:
+		return len(arr) > 0
+	default:
+		return false
+	}
 }
 
 // Helper function to safely extract EmailBody from BSON
@@ -1120,26 +1193,48 @@ func (m *MongoEmailService) updateMailboxField(ctx context.Context, quillMail, m
 	return nil
 }
 
-// countUniqueThreads counts the number of unique threads matching the filter
-func (m *MongoEmailService) countUniqueThreads(ctx context.Context, filter bson.M) (int64, error) {
-	pipeline := []bson.M{
-		// Match the filter criteria
-		{"$match": filter},
-		// Group by threadId to get unique threads
-		{"$group": bson.M{
-			"_id": "$threadId",
-		}},
-		// Count the number of unique threads
-		{"$count": "totalThreads"},
+// countUniqueThreadsWithFilters counts the number of unique threads matching the given filters.
+func (m *MongoEmailService) countUniqueThreadsWithFilters(ctx context.Context, baseFilter bson.M, filters *FetchEmailFilters) (int64, error) {
+	pipeline := []bson.M{}
+
+	// Stage 1: Match mailbox entries (user, folder, is_read, is_starred)
+	pipeline = append(pipeline, bson.M{"$match": baseFilter})
+
+	// Stage 2: Lookup messages with nested filters
+	lookupPipeline := []bson.M{}
+
+	messageFilters := buildMessageFilters(filters)
+	if len(messageFilters) > 0 {
+		lookupPipeline = append(lookupPipeline, bson.M{"$match": messageFilters})
 	}
+	lookupPipeline = append(lookupPipeline, bson.M{"$limit": 1}) // Only need one matching message to confirm thread's relevance
+
+	pipeline = append(pipeline, bson.M{
+		"$lookup": bson.M{
+			"from":         "messages",
+			"localField":   "messageId",
+			"foreignField": "messageId",
+			"as":           "messageDetails",
+			"pipeline":     lookupPipeline,
+		},
+	})
+
+	// Stage 3: Filter out entries where no matching message was found by the lookup
+	pipeline = append(pipeline, bson.M{"$match": bson.M{"messageDetails": bson.M{"$ne": []interface{}{}}}})
+
+	// Stage 4: Group by threadId to get unique threads that passed all filters
+	pipeline = append(pipeline, bson.M{"$group": bson.M{"_id": "$threadId"}})
+
+	// Stage 5: Count the number of unique threads
+	pipeline = append(pipeline, bson.M{"$count": "totalThreads"})
 
 	cursor, err := m.db.Collection("mailboxes").Aggregate(ctx, pipeline)
 	if err != nil {
 		return 0, err
 	}
 	defer func() {
-		if err := cursor.Close(ctx); err != nil {
-			log.Printf("Error closing cursor: %v", err)
+		if cerr := cursor.Close(ctx); cerr != nil {
+			log.Printf("Error closing cursor in countUniqueThreadsWithFilters: %v", cerr)
 		}
 	}()
 
@@ -1160,9 +1255,179 @@ func (m *MongoEmailService) countUniqueThreads(ctx context.Context, filter bson.
 	case float64:
 		return int64(count), nil
 	default:
-		return 0, fmt.Errorf("unexpected count type: %T", count)
+		return 0, fmt.Errorf("unexpected count type in countUniqueThreadsWithFilters: %T", count)
 	}
-	return 0, nil
+}
+
+// buildMessageFilters constructs a BSON filter for the 'messages' collection
+// based on the provided FetchEmailFilters.
+func buildMessageFilters(filters *FetchEmailFilters) bson.M {
+	if filters == nil {
+		return bson.M{} // No filters provided, return empty BSON map
+	}
+
+	var andConditions []bson.M
+
+	// Search filters (keywords, exact phrase, from, to)
+	if filters.Search != nil {
+		// Keywords: match any keyword in subject or body.text (case-insensitive)
+		if len(filters.Search.Keywords) > 0 {
+			var keywordOrClauses []bson.M
+			for _, keyword := range filters.Search.Keywords {
+				// Using regex for contains with 'i' for case-insensitivity
+				keywordOrClauses = append(keywordOrClauses,
+					bson.M{"subject": bson.M{"$regex": keyword, "$options": "i"}},
+					bson.M{"body.text": bson.M{"$regex": keyword, "$options": "i"}},
+				)
+			}
+			if len(keywordOrClauses) > 0 {
+				andConditions = append(andConditions, bson.M{"$or": keywordOrClauses})
+			}
+		}
+
+		// Exact Phrase: match exact phrase in subject or body.text (case-insensitive, with word boundaries)
+		if filters.Search.ExactPhrase != "" {
+			// Escape special regex characters in the phrase
+			escapedPhrase := regexp.QuoteMeta(filters.Search.ExactPhrase)
+			regexPattern := "\\b" + escapedPhrase + "\\b"
+			andConditions = append(andConditions, bson.M{"$or": []bson.M{
+				{"subject": bson.M{"$regex": regexPattern, "$options": "i"}},
+				{"body.text": bson.M{"$regex": regexPattern, "$options": "i"}},
+			}})
+		}
+
+		// From addresses: match sender email
+		if len(filters.Search.From) > 0 {
+			andConditions = append(andConditions, bson.M{"fromMail": bson.M{"$in": filters.Search.From}})
+		}
+
+		// To addresses: match any recipient in to, cc, or bcc arrays
+		if len(filters.Search.To) > 0 {
+			var toOrClauses []bson.M
+			for _, recipient := range filters.Search.To {
+				toOrClauses = append(toOrClauses,
+					bson.M{"to": recipient},
+					bson.M{"cc": recipient},
+					bson.M{"bcc": recipient},
+				)
+			}
+			if len(toOrClauses) > 0 {
+				andConditions = append(andConditions, bson.M{"$or": toOrClauses})
+			}
+		}
+	}
+
+	// Flag filters (specific to messages collection: HasAttachments)
+	if filters.Flags != nil && filters.Flags.HasAttachments != nil {
+		if *filters.Flags.HasAttachments {
+			// Check if 'attachments' field exists, is not null, and has elements
+			andConditions = append(andConditions, bson.M{
+				"attachments": bson.M{"$exists": true, "$ne": nil, "$not": bson.M{"$size": 0}},
+			})
+		} else {
+			// Check if 'attachments' field doesn't exist, is null, or is an empty array
+			andConditions = append(andConditions, bson.M{"$or": []bson.M{
+				{"attachments": bson.M{"$exists": false}},
+				{"attachments": nil},
+				{"attachments": bson.M{"$size": 0}},
+			}})
+		}
+	}
+
+	// Date range filters (sentAt)
+	if filters.DateRange != nil {
+		dateFilter := bson.M{}
+		if filters.DateRange.After != nil {
+			dateFilter["$gte"] = *filters.DateRange.After
+		}
+		if filters.DateRange.Before != nil {
+			dateFilter["$lt"] = *filters.DateRange.Before // Using $lt (exclusive) based on common date range semantics
+		}
+		if len(dateFilter) > 0 {
+			andConditions = append(andConditions, bson.M{"sentAt": dateFilter})
+		}
+	}
+
+	if len(andConditions) == 0 {
+		return bson.M{}
+	}
+	if len(andConditions) == 1 {
+		// If there's only one condition, return it directly instead of wrapping in $and
+		return andConditions[0]
+	}
+	return bson.M{"$and": andConditions}
+}
+
+// buildThreadOverviewsFromAggregation processes raw BSON results from the
+// fetchMailboxEntriesWithFilters aggregation pipeline into ThreadOverview structs.
+func (m *MongoEmailService) buildThreadOverviewsFromAggregation(ctx context.Context, results []bson.M, userID, quillmail string) []ThreadOverview {
+	if len(results) == 0 {
+		return []ThreadOverview{}
+	}
+
+	// Extract thread IDs from the aggregated results for batch counting
+	threadIDs := make([]string, 0, len(results))
+	for _, result := range results {
+		if threadID, ok := result["threadId"].(string); ok { // 'threadId' is directly available after replaceRoot
+			threadIDs = append(threadIDs, threadID)
+		}
+	}
+
+	// Batch count total and unread messages for these specific threads
+	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting total messages for overviews: %v", err)
+		totalCounts = make(map[string]int64) // Initialize to avoid panic if error
+	}
+
+	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
+	if err != nil {
+		log.Printf("Error batch counting unread messages for overviews: %v", err)
+		unreadCounts = make(map[string]int64) // Initialize to avoid panic if error
+	}
+
+	var threadOverviews []ThreadOverview
+	for _, result := range results {
+		threadID := getStringFromBson(result, "threadId")
+
+		// 'messageDetails' is now a direct BSON map due to $unwind and $replaceRoot
+		var messageDetails bson.M
+		if details, ok := result["messageDetails"].(bson.M); ok {
+			messageDetails = details
+		} else {
+			// This should ideally not happen if $match for non-empty messageDetails worked
+			log.Printf("Warning: Aggregated result missing messageDetails for thread %s", threadID)
+			continue
+		}
+
+		// 'options.read' (IsRead) comes from the original mailboxEntry
+		isRead := false
+		if options, ok := result["options"].(bson.M); ok {
+			if read, ok := options["read"].(bool); ok {
+				isRead = read
+			}
+		}
+		isStared := false
+		if result["options"].(bson.M)["starred"] != nil {
+			isStared = result["options"].(bson.M)["starred"].(bool)
+		} else {
+			log.Printf("Warning: Aggregated result missing starred option for thread %s", threadID)
+
+		}
+
+		threadOverview := convertBsonToThreadOverview(messageDetails, isRead, isStared)
+
+		// Populate counts
+		threadOverview.Count = int(totalCounts[threadID])
+		if threadOverview.Count == 0 { // Should at least be 1 if it passed filters
+			threadOverview.Count = 1
+		}
+		threadOverview.UnreadCount = int(unreadCounts[threadID])
+
+		threadOverviews = append(threadOverviews, threadOverview)
+	}
+
+	return threadOverviews
 }
 
 // Helper to count messages in a thread
