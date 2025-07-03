@@ -64,6 +64,7 @@ func NewMongoEmailService(db *mongo.Database) *MongoEmailService {
 type mailboxEntryOptions struct {
 	Read     bool   `bson:"read"`
 	Category string `bson:"category,omitempty"`
+	Starred  bool   `bson:"starred,omitempty"` // indicates if the message is starred
 }
 
 // mailboxEntry represents a reference to a message in a user's mailbox
@@ -755,37 +756,37 @@ func extractMessageIDs(entries []mailboxEntry) []string {
 }
 
 // fetchMessagesByIDs fetches messages and maps them to domain Message objects in the order of entries
-func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]ThreadOverview, error) {
-	messageMap, err := m.getMessageMapByIDs(ctx, messageIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	userID, ok := UserIDFromContext(ctx)
-	if !ok {
-		return nil, ErrUserNotAuthenticated
-	}
-	quillmail, err := m.getUserQuillMail(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	threadIDs := m.collectThreadIDsFromEntries(entries, messageMap)
-	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting total messages: %v", err)
-		totalCounts = make(map[string]int64)
-	}
-
-	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
-	if err != nil {
-		log.Printf("Error batch counting unread messages: %v", err)
-		unreadCounts = make(map[string]int64)
-	}
-
-	messages := m.buildThreadOverviews(entries, messageMap, totalCounts, unreadCounts)
-	return messages, nil
-}
+//func (m *MongoEmailService) fetchMessagesByIDs(ctx context.Context, messageIDs []string, entries []mailboxEntry) ([]ThreadOverview, error) {
+//	messageMap, err := m.getMessageMapByIDs(ctx, messageIDs)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	userID, ok := UserIDFromContext(ctx)
+//	if !ok {
+//		return nil, ErrUserNotAuthenticated
+//	}
+//	quillmail, err := m.getUserQuillMail(ctx, userID)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	threadIDs := m.collectThreadIDsFromEntries(entries, messageMap)
+//	totalCounts, err := m.batchCountMessagesInThreads(ctx, threadIDs)
+//	if err != nil {
+//		log.Printf("Error batch counting total messages: %v", err)
+//		totalCounts = make(map[string]int64)
+//	}
+//
+//	unreadCounts, err := m.batchCountUnreadMessagesInThreads(ctx, quillmail, threadIDs)
+//	if err != nil {
+//		log.Printf("Error batch counting unread messages: %v", err)
+//		unreadCounts = make(map[string]int64)
+//	}
+//
+//	messages := m.buildThreadOverviews(entries, messageMap, totalCounts, unreadCounts)
+//	return messages, nil
+//}
 
 // Helper: get message map by IDs
 func (m *MongoEmailService) getMessageMapByIDs(ctx context.Context, messageIDs []string) (map[string]bson.M, error) {
@@ -839,7 +840,7 @@ func (m *MongoEmailService) buildThreadOverviews(entries []mailboxEntry, message
 				totalCount = 1
 			}
 			unreadCount := unreadCounts[threadID]
-			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read)
+			message := convertBsonToThreadOverview(rawMsg, entry.Options.Read, entry.Options.Starred)
 			message.Count = int(totalCount)
 			message.UnreadCount = int(unreadCount)
 			messages = append(messages, message)
@@ -870,7 +871,8 @@ func convertBsonToMessage(bsonMsg bson.M, read bool) Message {
 }
 
 // Helper function to convert BSON to Message domain object
-func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
+func convertBsonToThreadOverview(bsonMsg bson.M, read bool, stared bool) ThreadOverview {
+
 	msg := ThreadOverview{
 		ThreadID: getThreadIDFromBson(bsonMsg),
 		LatestMessage: MessageSummary{
@@ -887,11 +889,27 @@ func convertBsonToThreadOverview(bsonMsg bson.M, read bool) ThreadOverview {
 			}(),
 			Timestamp: getTimeFromBson(bsonMsg, "sentAt"),
 			Flags: EmailFlags{
-				IsRead: read,
+				IsRead: read, HasAttachments: hasAttachmentsFromBson(bsonMsg), IsStarred: stared,
 			},
 		},
 	}
 	return msg
+}
+
+// hasAttachmentsFromBson checks if the given bson.M message has non-empty attachments.
+func hasAttachmentsFromBson(bsonMsg bson.M) bool {
+	attachments, ok := bsonMsg["attachments"]
+	if !ok || attachments == nil {
+		return false
+	}
+	switch arr := attachments.(type) {
+	case []interface{}:
+		return len(arr) > 0
+	case primitive.A:
+		return len(arr) > 0
+	default:
+		return false
+	}
 }
 
 // Helper function to safely extract EmailBody from BSON
@@ -1389,8 +1407,15 @@ func (m *MongoEmailService) buildThreadOverviewsFromAggregation(ctx context.Cont
 				isRead = read
 			}
 		}
+		isStared := false
+		if result["options"].(bson.M)["starred"] != nil {
+			isStared = result["options"].(bson.M)["starred"].(bool)
+		} else {
+			log.Printf("Warning: Aggregated result missing starred option for thread %s", threadID)
 
-		threadOverview := convertBsonToThreadOverview(messageDetails, isRead)
+		}
+
+		threadOverview := convertBsonToThreadOverview(messageDetails, isRead, isStared)
 
 		// Populate counts
 		threadOverview.Count = int(totalCounts[threadID])
