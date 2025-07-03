@@ -34,6 +34,8 @@ type AntiSpamProof struct {
 	Nonce    string `json:"nonce"`
 }
 
+var MAIL = "omer~quillmail.xyz"
+
 func main() {
 	// Flags: server address and JSON directory
 	addr := flag.String("addr", "localhost:9876", "server address (host:port)")
@@ -173,14 +175,14 @@ func sendTestEmails(conn net.Conn, jsonDir string) {
 
 	// Email 1: To omer, with keyword 'project'
 	sendModifiedEmail(conn, jsonDir, map[string]interface{}{
-		"to":      []string{"omer~quillmail.com"},
+		"to":      []string{MAIL},
 		"subject": "Project Update",
 		"body":    map[string]string{"text": "Here is the latest on the project."},
 	})
 
 	// Email 2: From omer, with keyword 'deadline'
 	sendModifiedEmail(conn, jsonDir, map[string]interface{}{
-		"from":    "omer~quillmail.com",
+		"from":    MAIL,
 		"to":      []string{"itamar~quillmail.com"},
 		"subject": "Upcoming Deadline",
 		"body":    map[string]string{"text": "Just a reminder about the deadline."},
@@ -188,7 +190,7 @@ func sendTestEmails(conn net.Conn, jsonDir string) {
 
 	// Email 3: To omer, with an attachment
 	sendModifiedEmail(conn, jsonDir, map[string]interface{}{
-		"to":      []string{"omer~quillmail.com"},
+		"to":      []string{MAIL},
 		"subject": "Design Mockups",
 		"body":    map[string]string{"text": "See attached mockups."},
 		"attachments": []map[string]string{
@@ -198,7 +200,7 @@ func sendTestEmails(conn net.Conn, jsonDir string) {
 
 	// Email 4: To omer, with the exact phrase 'team meeting'
 	sendModifiedEmail(conn, jsonDir, map[string]interface{}{
-		"to":      []string{"omer~quillmail.com"},
+		"to":      []string{MAIL},
 		"subject": "Meeting Reminder",
 		"body":    map[string]string{"text": "Don't forget the team meeting tomorrow."},
 	})
@@ -248,7 +250,7 @@ func runFetchOverviewTests(conn net.Conn, jsonDir string) {
 	fmt.Println("--- Test Case 2: Filter by Sender ---")
 	sendAndTestFetchOverview(conn, jsonDir, map[string]interface{}{
 		"search": map[string]interface{}{
-			"from": []string{"omer~quillmail.com"},
+			"from": []string{MAIL},
 		},
 	})
 
@@ -256,7 +258,7 @@ func runFetchOverviewTests(conn net.Conn, jsonDir string) {
 	fmt.Println("--- Test Case 3: Filter by Recipient ---")
 	sendAndTestFetchOverview(conn, jsonDir, map[string]interface{}{
 		"search": map[string]interface{}{
-			"to": []string{"omer~quillmail.com"},
+			"to": []string{MAIL},
 		},
 	})
 
@@ -285,7 +287,6 @@ func runFetchOverviewTests(conn net.Conn, jsonDir string) {
 	})
 
 	// Test case 7: Filter by has attachments
-	// TODO this dont work yet, need to implement the backend logic
 	fmt.Println("--- Test Case 7: Filter by Has Attachments ---")
 	sendAndTestFetchOverview(conn, jsonDir, map[string]interface{}{
 		"flags": map[string]interface{}{
