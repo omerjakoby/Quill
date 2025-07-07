@@ -1287,9 +1287,10 @@ func buildMessageFilters(filters *FetchEmailFilters) bson.M {
 			var keywordOrClauses []bson.M
 			for _, keyword := range filters.Search.Keywords {
 				// Using regex for contains with 'i' for case-insensitivity
+				escapedKeyword := regexp.QuoteMeta(keyword)
 				keywordOrClauses = append(keywordOrClauses,
-					bson.M{"subject": bson.M{"$regex": keyword, "$options": "i"}},
-					bson.M{"body.text": bson.M{"$regex": keyword, "$options": "i"}},
+					bson.M{"subject": bson.M{"$regex": escapedKeyword, "$options": "i"}},
+					bson.M{"body.text": bson.M{"$regex": escapedKeyword, "$options": "i"}},
 				)
 			}
 			if len(keywordOrClauses) > 0 {
