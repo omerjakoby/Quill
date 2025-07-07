@@ -4,7 +4,7 @@
   "payload": {
     "message_id": "",
     "thread_id": "",
-    "from": "alice~quillmail.com",
+    "from": "omer~quillmail.com",
     "to": ["omer~quillmail.com"],
     "cc": [],
     "bcc": [],
