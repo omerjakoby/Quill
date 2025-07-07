@@ -9,14 +9,15 @@ import (
 
 // ServiceHandler orchestrates DTO ↔ domain mapping, invoking services, and constructing DTO replies.
 type ServiceHandler struct {
-	authSvc  AuthService
-	emailSvc EmailService
-	keySvc   KeyService
+	authSvc       AuthService
+	emailSvc      EmailService
+	keySvc        KeyService
+	federationSvc FederationSender
 }
 
 // NewServiceHandler constructs the service-layer handler using existing services.
-func NewServiceHandler(as AuthService, es EmailService, ks KeyService) *ServiceHandler {
-	return &ServiceHandler{authSvc: as, emailSvc: es, keySvc: ks}
+func NewServiceHandler(as AuthService, es EmailService, ks KeyService, fs FederationSender) *ServiceHandler {
+	return &ServiceHandler{authSvc: as, emailSvc: es, keySvc: ks, federationSvc: fs}
 }
 
 // mapDomainErrorToTransportCode maps domain error codes to transport layer error codes
@@ -133,7 +134,14 @@ func (s *ServiceHandler) HandleSendEmail(ctx context.Context, payload SendEmailP
 		return SendEmailAckPayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeSendEmail}
 	}
 
-	//TODO ITAMAR handle external delivery if needed. the res contains the queued_for field which is a list of addresses that need to be sent to
+	// Handle external delivery asynchronously if there are queued recipients
+	if len(res.QueuedFor) > 0 {
+		go func() {
+			// Create a background context for the federation delivery
+			bgCtx := context.Background()
+			domain.SendToExternalDomains(bgCtx, s.federationSvc, res.QueuedFor, dReq)
+		}()
+	}
 
 	return SendEmailAckPayload{Status: StatusOK, MessageID: res.MessageID, DeliveredTo: res.DeliveredTo, QueuedFor: res.QueuedFor}, nil
 }

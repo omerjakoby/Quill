@@ -34,10 +34,10 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Initialize services and databases
-	authSvc, mongoDB, emailSvc, keySvc := initializeServices()
+	authSvc, mongoDB, emailSvc, keySvc, federationSvc := initializeServices()
 
 	// Configure and start servers
-	quillServer := setupQuillServer(ctx, cancel, authSvc, emailSvc, keySvc)
+	quillServer := setupQuillServer(ctx, cancel, authSvc, emailSvc, keySvc, federationSvc)
 	httpServer := setupHTTPServer(ctx, cancel, mongoDB, authSvc)
 
 	// Wait for shutdown signal
@@ -45,7 +45,7 @@ func main() {
 }
 
 // initializeServices sets up the authentication service and database connections
-func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, quill.KeyService) {
+func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, quill.KeyService, quill.FederationSender) {
 	// Auth Service initialization
 	authSvcCtx, authSvcCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer authSvcCancel()
@@ -66,7 +66,11 @@ func initializeServices() (quill.AuthService, *db.MongoDB, quill.EmailService, q
 	keySvc := domain.NewMockKeyService()
 	log.Println("Created mock key service")
 
-	return authSvc, mongoDB, msgSvc, keySvc
+	// Federation service initialization
+	federationSvc := domain.NewMockFederationSender()
+	log.Println("Created mock federation service")
+
+	return authSvc, mongoDB, msgSvc, keySvc, federationSvc
 }
 
 // initializeMongoDB connects to MongoDB and ensures indexes
@@ -107,8 +111,8 @@ func ensureMongoDBIndexes(mongoDB *db.MongoDB) {
 }
 
 // setupQuillServer configures and starts the Quill protocol server
-func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc quill.EmailService, keySvc quill.KeyService) *quill.Server {
-	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc)
+func setupQuillServer(ctx context.Context, cancel context.CancelFunc, authSvc quill.AuthService, emailSvc quill.EmailService, keySvc quill.KeyService, federationSvc quill.FederationSender) *quill.Server {
+	ServiceHandler := quill.NewServiceHandler(authSvc, emailSvc, keySvc, federationSvc)
 	protocolHandler := quill.NewProtocolHandler(ServiceHandler)
 
 	quillServer := quill.NewServer(constants.QuillServerAddr, protocolHandler)

@@ -20,3 +20,8 @@ type EmailService interface {
 type KeyService interface {
 	FetchKeys(ctx context.Context, req domain.FetchKeysRequest) (domain.FetchKeysResult, error)
 }
+
+// FederationSender handles sending emails to external Quill servers
+type FederationSender interface {
+	SendFederatedEmail(ctx context.Context, req domain.FederatedEmailRequest) error
+}
