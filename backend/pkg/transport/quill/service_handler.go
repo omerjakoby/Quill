@@ -2,6 +2,7 @@ package quill
 
 import (
 	"context"
+	"errors"
 	"quill/pkg/domain"
 	"time"
 )
@@ -19,11 +20,56 @@ func NewServiceHandler(as AuthService, es EmailService, ks KeyService) *ServiceH
 	return &ServiceHandler{authSvc: as, emailSvc: es, keySvc: ks}
 }
 
+// mapDomainErrorToTransportCode maps domain error codes to transport layer error codes
+func mapDomainErrorToTransportCode(err error) string {
+	var domainErr *domain.DomainError
+	if errors.As(err, &domainErr) {
+		// Direct mapping for errors that have the same code
+		switch domainErr.Code {
+		case domain.ErrCodeAuthRequired:
+			return ErrorCodeAuthRequired
+		case domain.ErrCodeInvalidToken:
+			return ErrorCodeInvalidToken
+		case domain.ErrCodePermissionDenied:
+			return ErrorCodePermissionDenied
+		case domain.ErrCodeSenderMismatch:
+			return ErrorCodeSenderMismatch
+		case domain.ErrCodeInvalidPayload:
+			return ErrorCodeInvalidPayload
+		case domain.ErrCodeInvalidRecipients:
+			return ErrorCodeInvalidRecipients
+		case domain.ErrCodeInvalidFilter:
+			return ErrorCodeInvalidFilter
+		case domain.ErrCodeInvalidMode:
+			return ErrorCodeInvalidMode
+		case domain.ErrCodeUserNotFound:
+			return ErrorCodeUserNotFound
+		case domain.ErrCodeFolderNotFound:
+			return ErrorCodeFolderNotFound
+		case domain.ErrCodeThreadNotFound:
+			return ErrorCodeThreadNotFound
+		case domain.ErrCodeTooLarge:
+			return ErrorCodeTooLarge
+		case domain.ErrCodeBlockedDomain:
+			return ErrorCodeBlockedDomain
+		case domain.ErrCodeRecipientUnavailable:
+			return ErrorCodeRecipientUnavailable
+		case domain.ErrCodeInternalError:
+			return ErrorCodeInternalServerError
+		default:
+			return ErrorCodeInternalServerError
+		}
+	}
+	// Fallback for non-domain errors
+	return ErrorCodeInternalServerError
+}
+
 // HandleAuth authenticates the client and returns AuthAckPayload or an ErrorPayload
 func (s *ServiceHandler) HandleAuth(ctx context.Context, payload AuthPayload) (AuthAckPayload, *ErrorPayload) {
 	err := s.authSvc.Authenticate(ctx, payload.Credentials.Token)
 	if err != nil {
-		return AuthAckPayload{}, &ErrorPayload{Code: ErrorCodeInvalidToken, Message: err.Error(), Context: PacketTypeAuth}
+		errorCode := mapDomainErrorToTransportCode(err)
+		return AuthAckPayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeAuth}
 	}
 	//TODO add a check to validate email address from the ctx context and make sure its for the right userID
 	sess := SessionInfo{ExpiresIn: DefaultSessionExpiresIn, Identity: payload.Credentials.Token}
@@ -35,7 +81,8 @@ func (s *ServiceHandler) HandleFetchKeys(ctx context.Context, payload FetchKeysP
 	req := domain.FetchKeysRequest{Query: payload.Query}
 	res, err := s.keySvc.FetchKeys(ctx, req)
 	if err != nil {
-		return KeyResponsePayload{}, &ErrorPayload{Code: ErrorCodeInternalServerError, Message: err.Error(), Context: PacketTypeFetchKeys}
+		errorCode := mapDomainErrorToTransportCode(err)
+		return KeyResponsePayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeFetchKeys}
 	}
 	return KeyResponsePayload{Email: res.Identity, PublicKey: res.PublicKey, Expires: res.Expires.Format(time.RFC3339)}, nil
 }
@@ -84,7 +131,8 @@ func (s *ServiceHandler) HandleSendEmail(ctx context.Context, payload SendEmailP
 	}
 	res, err := s.emailSvc.SendEmail(ctx, dReq)
 	if err != nil {
-		return SendEmailAckPayload{}, &ErrorPayload{Code: ErrorCodeInternalServerError, Message: err.Error(), Context: PacketTypeSendEmail}
+		errorCode := mapDomainErrorToTransportCode(err)
+		return SendEmailAckPayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeSendEmail}
 	}
 
 	//TODO ITAMAR handle external delivery if needed. the res contains the queued_for field which is a list of addresses that need to be sent to
@@ -109,7 +157,8 @@ func (s *ServiceHandler) HandleFetchEmail(ctx context.Context, payload FetchEmai
 	// Call domain service
 	res, err := s.emailSvc.FetchEmail(ctx, dReq)
 	if err != nil {
-		return FetchEmailResponsePayload{}, &ErrorPayload{Code: ErrorCodeInternalServerError, Message: err.Error(), Context: PacketTypeFetchEmail}
+		errorCode := mapDomainErrorToTransportCode(err)
+		return FetchEmailResponsePayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeFetchEmail}
 	}
 
 	// Map based on mode
@@ -153,7 +202,8 @@ func (s *ServiceHandler) HandleUpdateEmail(ctx context.Context, payload UpdateEm
 
 	res, err := s.emailSvc.UpdateEmail(ctx, dReq)
 	if err != nil {
-		return UpdateEmailAckPayload{}, &ErrorPayload{Code: ErrorCodeInternalServerError, Message: err.Error(), Context: PacketTypeUpdateEmail}
+		errorCode := mapDomainErrorToTransportCode(err)
+		return UpdateEmailAckPayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeUpdateEmail}
 	}
 	return mapUpdateResult(res), nil
 }

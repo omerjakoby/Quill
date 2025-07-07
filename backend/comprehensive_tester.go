@@ -34,7 +34,7 @@ type AntiSpamProof struct {
 	Nonce    string `json:"nonce"`
 }
 
-var MAIL = "omer~quillmail.com"
+var MAIL = "omer~quillmail.xyz"
 
 func main() {
 	// Flags: server address and JSON directory

@@ -86,40 +86,39 @@ func (m *MongoEmailService) SendEmail(ctx context.Context, req SendEmailRequest)
 		}
 		return m.SendExternal(ctx, req)
 	}
-	return SendEmailResult{}, errorString("invalid sender address format")
-
+	return SendEmailResult{}, NewDomainError(ErrCodeInvalidPayload, "invalid sender address format")
 }
 
 func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailRequest) (SendEmailResult, error) {
 	authUserID, ok := UserIDFromContext(ctx)
 	if !ok {
-		return SendEmailResult{}, ErrUserNotAuthenticated
+		return SendEmailResult{}, NewDomainError(ErrCodeAuthRequired, "user not authenticated")
 	}
 
 	authUserQuillMail, err := m.getUserQuillMail(ctx, authUserID)
 	if err != nil {
-		return SendEmailResult{}, err
+		return SendEmailResult{}, NewDomainErrorWithCause(ErrCodeInternalError, "failed to get user quillmail", err)
 	}
 
 	if req.From != authUserQuillMail {
-		return SendEmailResult{}, errorString("sender address does not match authenticated user")
+		return SendEmailResult{}, NewDomainError(ErrCodeSenderMismatch, "sender address does not match authenticated user")
 	}
 
 	// Validate recipient address format
 	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
 		if !validateQuillMailFormat(addr) {
-			return SendEmailResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+			return SendEmailResult{}, NewDomainError(ErrCodeInvalidRecipients, fmt.Sprintf("invalid recipient address format: %s", addr))
 		}
 	}
 
 	messageID, err := getOrValidateMessageID(req.MessageID)
 	if err != nil {
-		return SendEmailResult{}, err
+		return SendEmailResult{}, NewDomainErrorWithCause(ErrCodeInvalidPayload, "invalid message ID", err)
 	}
 
 	threadID, err := getOrValidateThreadID(req.ThreadID)
 	if err != nil {
-		return SendEmailResult{}, err
+		return SendEmailResult{}, NewDomainErrorWithCause(ErrCodeInvalidPayload, "invalid thread ID", err)
 	}
 
 	now := time.Now().UTC()
@@ -189,26 +188,26 @@ func (m *MongoEmailService) SendExternal(ctx context.Context, req SendEmailReque
 	// Validate and extract threadID and messageID
 	threadID, err := validateThreadID(req.ThreadID)
 	if err != nil {
-		return SendEmailResult{}, err
+		return SendEmailResult{}, NewDomainErrorWithCause(ErrCodeInvalidPayload, "invalid thread ID", err)
 	}
 	messageID, err := validateMessageID(req.MessageID)
 	if err != nil {
-		return SendEmailResult{}, err
+		return SendEmailResult{}, NewDomainErrorWithCause(ErrCodeInvalidPayload, "invalid message ID", err)
 	}
 
 	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
 		if !validateQuillMailFormat(addr) {
-			return SendEmailResult{}, errorString(fmt.Sprintf("invalid recipient address format: %s", addr))
+			return SendEmailResult{}, NewDomainError(ErrCodeInvalidRecipients, fmt.Sprintf("invalid recipient address format: %s", addr))
 		}
 	}
 
 	// Check for existing message
 	exists, err := m.messageExists(ctx, messageID)
 	if err != nil {
-		return SendEmailResult{}, err
+		return SendEmailResult{}, NewDomainErrorWithCause(ErrCodeInternalError, "failed to check message existence", err)
 	}
 	if exists {
-		return SendEmailResult{}, errorString("message with this ID already exists")
+		return SendEmailResult{}, NewDomainError(ErrCodeInvalidPayload, "message with this ID already exists")
 	}
 
 	// Prepare message document
@@ -262,7 +261,7 @@ func (m *MongoEmailService) SendExternal(ctx context.Context, req SendEmailReque
 // Helper to validate threadID
 func validateThreadID(threadIDPtr *string) (string, error) {
 	if threadIDPtr == nil || *threadIDPtr == "" || !isUUID(*threadIDPtr) {
-		return "", errorString("did not provide thread ID")
+		return "", NewDomainError(ErrCodeInvalidPayload, "did not provide valid thread ID")
 	}
 	return *threadIDPtr, nil
 }
@@ -270,7 +269,7 @@ func validateThreadID(threadIDPtr *string) (string, error) {
 // Helper to validate messageID
 func validateMessageID(messageID string) (string, error) {
 	if messageID == "" {
-		return "", errorString("did not provide message ID")
+		return "", NewDomainError(ErrCodeInvalidPayload, "did not provide message ID")
 	}
 	return messageID, nil
 }
@@ -332,9 +331,9 @@ func createMailboxEntries(recipients []string, messageID, threadID string, categ
 func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	// ... (Existing FetchEmail logic remains the same for initial mode checks)
 	if (req.Mode == FetchModeThread && req.ThreadID == nil) || (req.Mode == FetchModeOverview && req.Folder == nil) {
-		return FetchEmailResult{}, errorString("missing required parameters for fetch mode")
+		return FetchEmailResult{}, NewDomainError(ErrCodeInvalidPayload, "missing required parameters for fetch mode")
 	} else if req.Mode != FetchModeThread && req.Mode != FetchModeOverview {
-		return FetchEmailResult{}, errorString("invalid fetch mode")
+		return FetchEmailResult{}, NewDomainError(ErrCodeInvalidMode, "invalid fetch mode")
 	} else if req.Mode == FetchModeOverview {
 		// THIS IS THE MODIFIED CALL
 		return m.FetchOverview(ctx, req)
@@ -342,18 +341,18 @@ func (m *MongoEmailService) FetchEmail(ctx context.Context, req FetchEmailReques
 		// FetchThread remains unchanged, as per our earlier discussion.
 		return m.FetchThread(ctx, req)
 	}
-	return FetchEmailResult{}, errorString("unsupported fetch mode")
+	return FetchEmailResult{}, NewDomainError(ErrCodeInvalidMode, "unsupported fetch mode")
 }
 
 func (m *MongoEmailService) FetchOverview(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	userID, ok := UserIDFromContext(ctx)
 	if !ok {
-		return FetchEmailResult{}, ErrUserNotAuthenticated
+		return FetchEmailResult{}, NewDomainError(ErrCodeAuthRequired, "user not authenticated")
 	}
 
 	quillmail, err := m.getUserQuillMail(ctx, userID)
 	if err != nil {
-		return FetchEmailResult{}, err
+		return FetchEmailResult{}, NewDomainErrorWithCause(ErrCodeInternalError, "failed to get user quillmail", err)
 	}
 
 	limit := 10
@@ -405,16 +404,16 @@ func (m *MongoEmailService) FetchOverview(ctx context.Context, req FetchEmailReq
 func (m *MongoEmailService) FetchThread(ctx context.Context, req FetchEmailRequest) (FetchEmailResult, error) {
 	userID, ok := UserIDFromContext(ctx)
 	if !ok {
-		return FetchEmailResult{}, ErrUserNotAuthenticated
+		return FetchEmailResult{}, NewDomainError(ErrCodeAuthRequired, "user not authenticated")
 	}
 
 	if req.ThreadID == nil {
-		return FetchEmailResult{}, errorString("thread ID is required for thread mode")
+		return FetchEmailResult{}, NewDomainError(ErrCodeInvalidPayload, "thread ID is required for thread mode")
 	}
 
 	quillmail, err := m.getUserQuillMail(ctx, userID)
 	if err != nil {
-		return FetchEmailResult{}, err
+		return FetchEmailResult{}, NewDomainErrorWithCause(ErrCodeInternalError, "failed to get user quillmail", err)
 	}
 
 	limit := 10
@@ -480,7 +479,7 @@ func (m *MongoEmailService) checkThreadAccess(ctx context.Context, req FetchEmai
 			return err
 		}
 		if count == 0 {
-			return errorString("thread not found or access denied")
+			return NewDomainError(ErrCodeThreadNotFound, "thread not found or access denied")
 		}
 	}
 	return nil
@@ -608,7 +607,7 @@ func (m *MongoEmailService) GetCategory(ctx context.Context, req SendEmailReques
 	var htmlContent string
 	if req.Body.HTML == "" {
 		if req.Body.Text == "" {
-			return "", errorString("no content provided for category extraction")
+			return "", NewDomainError(ErrCodeInvalidPayload, "no content provided for category extraction")
 		}
 		htmlContent = req.Body.Text
 	} else {
@@ -616,7 +615,7 @@ func (m *MongoEmailService) GetCategory(ctx context.Context, req SendEmailReques
 	}
 
 	if htmlContent == "" {
-		return "", errorString("content is empty")
+		return "", NewDomainError(ErrCodeInvalidPayload, "content is empty")
 	}
 	htmlContent, err := ExtractTextStream(strings.NewReader(htmlContent))
 	if err != nil {
@@ -1037,13 +1036,6 @@ func parseContentItem(c interface{}) *Content {
 */
 
 // ErrUserNotAuthenticated is returned when a user ID cannot be extracted from context
-var ErrUserNotAuthenticated = error(errorString("user not authenticated"))
-
-type errorString string
-
-func (e errorString) Error() string {
-	return string(e)
-}
 
 func extractDomain(input string) string {
 	lastTildeIndex := strings.LastIndex(input, "~")
@@ -1062,7 +1054,7 @@ func isUUID(input string) bool {
 func getOrValidateMessageID(messageID string) (string, error) {
 	if messageID != "" {
 		if !isUUID(messageID) {
-			return "", errorString("invalid message ID: must be a UUID")
+			return "", NewDomainError(ErrCodeInvalidPayload, "invalid message ID: must be a UUID")
 		}
 		return messageID, nil
 	}
@@ -1073,7 +1065,7 @@ func getOrValidateMessageID(messageID string) (string, error) {
 func getOrValidateThreadID(threadIDPtr *string) (string, error) {
 	if threadIDPtr != nil && *threadIDPtr != "" {
 		if !isUUID(*threadIDPtr) {
-			return "", errorString("invalid thread ID: must be a UUID")
+			return "", NewDomainError(ErrCodeInvalidPayload, "invalid thread ID: must be a UUID")
 		}
 		return *threadIDPtr, nil
 	}
@@ -1117,7 +1109,7 @@ func validateQuillMailFormat(input string) bool {
 func (m *MongoEmailService) UpdateEmail(ctx context.Context, req UpdateEmailRequest) (UpdateEmailResult, error) {
 	userid, ok := UserIDFromContext(ctx)
 	if !ok {
-		return UpdateEmailResult{}, ErrUserNotAuthenticated
+		return UpdateEmailResult{}, NewDomainError(ErrCodeAuthRequired, "user not authenticated")
 	}
 	quillMail, err := m.getUserQuillMail(ctx, userid)
 	if err != nil {
