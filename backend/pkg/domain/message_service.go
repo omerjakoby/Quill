@@ -91,6 +91,19 @@ func (m *MongoEmailService) SendEmail(ctx context.Context, req SendEmailRequest)
 }
 
 func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailRequest) (SendEmailResult, error) {
+	authUserID, ok := UserIDFromContext(ctx)
+	if !ok {
+		return SendEmailResult{}, ErrUserNotAuthenticated
+	}
+
+	authUserQuillMail, err := m.getUserQuillMail(ctx, authUserID)
+	if err != nil {
+		return SendEmailResult{}, err
+	}
+
+	if req.From != authUserQuillMail {
+		return SendEmailResult{}, errorString("sender address does not match authenticated user")
+	}
 
 	// Validate recipient address format
 	for _, addr := range append(append(req.To, req.CC...), req.BCC...) {
@@ -109,12 +122,11 @@ func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailReque
 		return SendEmailResult{}, err
 	}
 
-	userID := req.From
 	now := time.Now().UTC()
 
 	messageDoc := bson.M{
 		"messageId":   messageID,
-		"fromID":      userID,
+		"fromID":      authUserID,
 		"fromMail":    req.From,
 		"to":          req.To,
 		"cc":          req.CC,
@@ -137,7 +149,7 @@ func (m *MongoEmailService) SendInternal(ctx context.Context, req SendEmailReque
 
 	entries := []interface{}{
 		mailboxEntry{
-			UserID:     userID,
+			UserID:     authUserQuillMail,
 			MessageID:  messageID,
 			ThreadID:   threadID,
 			Folder:     "sent",
