@@ -70,7 +70,6 @@ func (s *ServiceHandler) HandleAuth(ctx context.Context, payload AuthPayload) (A
 		errorCode := mapDomainErrorToTransportCode(err)
 		return AuthAckPayload{}, &ErrorPayload{Code: errorCode, Message: err.Error(), Context: PacketTypeAuth}
 	}
-	//TODO add a check to validate email address from the ctx context and make sure its for the right userID
 	sess := SessionInfo{ExpiresIn: DefaultSessionExpiresIn, Identity: payload.Credentials.Token}
 	return AuthAckPayload{Accepted: true, Session: sess}, nil
 }
