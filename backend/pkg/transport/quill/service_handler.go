@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// TODO add support for receiving error codes from the domain layer so it will replace the general internal error
 // ServiceHandler orchestrates DTO ↔ domain mapping, invoking services, and constructing DTO replies.
 type ServiceHandler struct {
 	authSvc  AuthService
